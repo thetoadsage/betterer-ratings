@@ -56,6 +56,62 @@ def test_buffer_is_bounded_and_evicts_oldest():
     assert [e["message"] for e in entries] == ["entry 2", "entry 3", "entry 4"]
 
 
+def test_important_entries_survive_more_than_500_normal_entries():
+    handler = log_buffer.LogBufferHandler()
+    handler.emit(_record(level=logging.WARNING, msg="important warning"))
+    for i in range(600):
+        handler.emit(_record(msg=f"info {i}"))
+
+    messages = [e["message"] for e in handler.snapshot()]
+
+    assert len(messages) == 501
+    assert messages[0] == "important warning"
+    assert messages[1] == "info 100"
+    assert messages[-1] == "info 599"
+
+
+def test_important_entries_buffer_is_bounded():
+    handler = log_buffer.LogBufferHandler(maxlen=1, important_maxlen=3)
+    for i in range(5):
+        handler.emit(_record(level=logging.ERROR, msg=f"error {i}"))
+
+    messages = [e["message"] for e in handler.snapshot()]
+
+    assert messages == ["error 2", "error 3", "error 4"]
+
+
+def test_combined_logs_do_not_duplicate_entries_present_in_both_buffers():
+    handler = log_buffer.LogBufferHandler()
+    handler.emit(_record(level=logging.WARNING, msg="dup candidate"))
+    handler.emit(_record(msg="info line"))
+
+    messages = [e["message"] for e in handler.snapshot()]
+
+    assert messages == ["dup candidate", "info line"]
+
+
+def test_combined_logs_are_returned_chronologically_after_eviction():
+    handler = log_buffer.LogBufferHandler(maxlen=3, important_maxlen=500)
+    handler.emit(_record(level=logging.WARNING, msg="early warning"))
+    for i in range(5):
+        handler.emit(_record(msg=f"info {i}"))
+
+    messages = [e["message"] for e in handler.snapshot()]
+
+    assert messages == ["early warning", "info 2", "info 3", "info 4"]
+
+
+def test_level_filter_applies_to_combined_entries_after_eviction():
+    handler = log_buffer.LogBufferHandler(maxlen=3, important_maxlen=500)
+    handler.emit(_record(level=logging.ERROR, msg="early error"))
+    for i in range(5):
+        handler.emit(_record(msg=f"info {i}"))
+
+    error_only = [e["message"] for e in handler.snapshot(level="ERROR")]
+
+    assert error_only == ["early error"]
+
+
 def test_buffer_level_filter_uses_minimum_severity():
     handler = log_buffer.LogBufferHandler()
     handler.emit(_record(level=logging.DEBUG, msg="debug line"))
@@ -82,6 +138,15 @@ def test_buffer_level_filter_ignores_unrecognized_level():
 def test_buffer_clear_empties_entries():
     handler = log_buffer.LogBufferHandler()
     handler.emit(_record())
+    assert len(handler.snapshot()) == 1
+
+    handler.clear()
+    assert handler.snapshot() == []
+
+
+def test_buffer_clear_empties_important_entries_too():
+    handler = log_buffer.LogBufferHandler()
+    handler.emit(_record(level=logging.WARNING, msg="warning line"))
     assert len(handler.snapshot()) == 1
 
     handler.clear()

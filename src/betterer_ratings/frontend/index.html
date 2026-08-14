@@ -331,6 +331,11 @@ a{color:inherit;text-decoration:none}
   transition:color .15s,border-color .15s;
 }
 .log-clear-btn:hover{color:var(--text);border-color:#2b333f}
+.log-autoscroll{
+  display:flex;align-items:center;gap:6px;color:var(--text-secondary);
+  font-size:.7rem;cursor:pointer;user-select:none;
+}
+.log-autoscroll input{accent-color:var(--emerald);cursor:pointer}
 .log-list{max-height:560px;overflow-y:auto;font-family:var(--font-mono);font-size:.72rem}
 .log-row{display:flex;align-items:flex-start;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border-subtle)}
 .log-row:hover{background:rgba(255,255,255,.02)}
@@ -450,6 +455,10 @@ a{color:inherit;text-decoration:none}
             <option value="ERROR">ERROR</option>
             <option value="CRITICAL">CRITICAL</option>
           </select>
+          <label class="log-autoscroll" for="log-autoscroll-toggle">
+            <input type="checkbox" id="log-autoscroll-toggle" checked>
+            Auto-scroll
+          </label>
           <button class="log-clear-btn" id="log-clear-btn" type="button">Clear</button>
         </div>
       </div>
@@ -520,6 +529,7 @@ let matrixPreviousTotals = null;
 let logLevelFilter = 'ALL';
 let logsClearedAtEpoch = 0;
 let logsNewestVisibleTimestamp = 0;
+let logsAutoScroll = true;
 
 function logsURL() {
   return logLevelFilter && logLevelFilter !== 'ALL'
@@ -1002,6 +1012,23 @@ function renderRecent() {
 // ── Logs ──
 const LOG_LEVEL_PILL = {DEBUG:'pill-debug',INFO:'pill-info',WARNING:'pill-warning',ERROR:'pill-error',CRITICAL:'pill-critical'};
 const LOG_CONTEXT_SKIP_KEYS = new Set(['level','logger','message','component','event','provider','exception','timestamp']);
+const LOG_AUTOSCROLL_THRESHOLD_PX = 48;
+
+function isLogListNearBottom(list) {
+  return list.scrollHeight - list.scrollTop - list.clientHeight <= LOG_AUTOSCROLL_THRESHOLD_PX;
+}
+
+function scrollLogsToBottom() {
+  const list = document.getElementById('log-list');
+  if (list) list.scrollTop = list.scrollHeight;
+}
+
+function setLogsAutoScroll(enabled) {
+  logsAutoScroll = enabled;
+  const toggle = document.getElementById('log-autoscroll-toggle');
+  if (toggle) toggle.checked = enabled;
+  if (enabled) scrollLogsToBottom();
+}
 
 function renderLogs() {
   const list = document.getElementById('log-list');
@@ -1035,6 +1062,10 @@ function renderLogs() {
       <span class="log-message">${esc(l.message||'')}${context?`<span class="log-context">${esc(context)}</span>`:''}${exception}</span>
     </div>`;
   }).join('');
+
+  // Pinning is opt-in: when auto-scroll is off, newly rendered rows must
+  // not move the viewer's existing scroll position.
+  if (logsAutoScroll) scrollLogsToBottom();
 }
 
 document.getElementById('log-level-filter')?.addEventListener('change', e => {
@@ -1044,6 +1075,19 @@ document.getElementById('log-level-filter')?.addEventListener('change', e => {
 document.getElementById('log-clear-btn')?.addEventListener('click', () => {
   logsClearedAtEpoch = logsNewestVisibleTimestamp;
   renderLogs();
+});
+document.getElementById('log-autoscroll-toggle')?.addEventListener('change', e => {
+  setLogsAutoScroll(e.target.checked);
+});
+document.getElementById('log-list')?.addEventListener('scroll', () => {
+  const list = document.getElementById('log-list');
+  // Our own pin-to-bottom scroll always lands at/near the bottom, so this
+  // only fires the auto-disable when the viewer scrolled away themselves.
+  if (logsAutoScroll && !isLogListNearBottom(list)) {
+    logsAutoScroll = false;
+    const toggle = document.getElementById('log-autoscroll-toggle');
+    if (toggle) toggle.checked = false;
+  }
 });
 
 // ─── Init & Refresh ───
