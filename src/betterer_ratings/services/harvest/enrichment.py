@@ -10,6 +10,7 @@ def save_candidate_enrichment(
     details: Optional[Dict[str, Any]],
     md_item: Optional[Dict[str, Any]],
     now_ts: int,
+    mal_score: Optional[float] = None,
     parse_mdblist_ratings_fn: Callable[[Optional[Dict[str, Any]]], Dict[str, float]],
     parse_tmdb_vote_average_fn: Callable[[Optional[Dict[str, Any]]], Optional[float]],
     extract_mappings_fn: Callable[
@@ -17,6 +18,8 @@ def save_candidate_enrichment(
     ],
 ) -> Tuple[int, int, int, int, int]:
     ratings = parse_mdblist_ratings_fn(md_item)
+    if mal_score is not None:
+        ratings["ML"] = mal_score
     tm_score = parse_tmdb_vote_average_fn(details)
     if tm_score is not None:
         ratings["TM"] = tm_score

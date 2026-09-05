@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import math
 from collections import defaultdict
-from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, Optional, Sequence, Set, Tuple
 
 from betterer_ratings.config.schema import MDBListConfig
 from betterer_ratings.core.clock import to_log_time
@@ -134,7 +135,7 @@ class MDBListClient:
         self,
         candidates: Sequence[Candidate],
         on_chunk: Optional[
-            Callable[[str, Sequence[int], Dict[int, Dict[str, Any]], Set[int], int, int], None]
+            Callable[[str, Sequence[int], Dict[int, Dict[str, Any]], Set[int], int, int], None | Awaitable[None]]
         ] = None,
         stop_event: Optional[asyncio.Event] = None,
     ) -> Tuple[
@@ -243,7 +244,7 @@ class MDBListClient:
                     results[(media_type, tmdb_id)] = item
 
                 if on_chunk is not None:
-                    on_chunk(
+                    chunk_callback = on_chunk(
                         media_type,
                         chunk,
                         chunk_results,
@@ -251,6 +252,8 @@ class MDBListClient:
                         chunk_index,
                         total_chunks,
                     )
+                    if inspect.isawaitable(chunk_callback):
+                        await chunk_callback
 
             if halted_early:
                 break

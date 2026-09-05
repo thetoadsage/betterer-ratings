@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple
 
+from betterer_ratings.services.harvest.mal import fetch_candidate_mal_score
+
 
 async def run_mdblist_enrichment_phase(
     *,
@@ -32,7 +34,16 @@ async def run_mdblist_enrichment_phase(
     persisted_keys: Set[Tuple[str, int]] = set()
     queue_log_every = max(100, min(2000, len(candidates) // 10 or 100))
 
-    def on_mdblist_chunk(
+    async def save_candidate(candidate: Any, details: Any, md_item: Any, now_ts: int) -> Any:
+        kwargs = dict(candidate=candidate, details=details, md_item=md_item, now_ts=now_ts)
+        if getattr(self, "mal_client", None) is not None:
+            kwargs["mal_score"] = await fetch_candidate_mal_score(
+                client=self.mal_client, db=self.db, candidate=candidate,
+                details=details, md_item=md_item, stop_event=stop_event,
+            )
+        return self._save_candidate_enrichment(**kwargs)
+
+    async def on_mdblist_chunk(
         media_type: str,
         chunk_ids: Sequence[int],
         chunk_results: Dict[int, Dict[str, Any]],
@@ -62,7 +73,7 @@ async def run_mdblist_enrichment_phase(
                 tmdb_only_inc,
                 queue_r_inc,
                 queue_m_inc,
-            ) = self._save_candidate_enrichment(
+            ) = await save_candidate(
                 candidate=candidate,
                 details=tmdb_details.get(key),
                 md_item=chunk_results.get(tmdb_id),
@@ -142,7 +153,7 @@ async def run_mdblist_enrichment_phase(
                 tmdb_only_inc,
                 queue_r_inc,
                 queue_m_inc,
-            ) = self._save_candidate_enrichment(
+            ) = await save_candidate(
                 candidate=candidate,
                 details=tmdb_details.get(key),
                 md_item=mdblist_data.get(key),

@@ -317,6 +317,23 @@ class MDBListConfig:
 
 
 @dataclass(frozen=True)
+class MALConfig:
+    enabled: bool = False
+    client_id: str = ""
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "MALConfig":
+        _reject_unknown_keys(value, allowed={"enabled", "client_id"}, path="mal")
+        enabled = value.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigValidationError("mal.enabled must be a boolean")
+        client_id = _as_str(value.get("client_id", ""), path="mal.client_id").strip()
+        if enabled and (not client_id or client_id.lower().startswith("replace-me")):
+            raise ConfigValidationError("mal.client_id is required when mal.enabled is true")
+        return MALConfig(enabled=enabled, client_id=client_id)
+
+
+@dataclass(frozen=True)
 class PMDBConfig:
     api_rate_limit: RateLimitConfig
     ratings_limit: RateLimitConfig
@@ -365,12 +382,13 @@ class AppConfig:
     imdb: IMDbConfig
     mdblist: MDBListConfig
     pmdb: PMDBConfig
+    mal: MALConfig = MALConfig()
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "AppConfig":
         _reject_unknown_keys(
             value,
-            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb"},
+            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "mal"},
             path="<root>",
         )
         api_keys = APIKeysConfig.from_mapping(
@@ -388,6 +406,7 @@ class AppConfig:
             imdb=imdb,
             mdblist=mdblist,
             pmdb=pmdb,
+            mal=MALConfig.from_mapping(_require_mapping(value.get("mal", {}), path="mal")),
         )
 
 

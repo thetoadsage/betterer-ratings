@@ -71,3 +71,9 @@ daily_reserve = 0
 api_rate_limit = { requests = 15, per_seconds = 1.0 }
 ratings_limit = { requests = 15, per_seconds = 1.0 }
 mappings_limit = { requests = 15, per_seconds = 1.0 }
+
+[mal]
+# Official MyAnimeList API; public reads need only your registered Client ID.
+# Existing configs without this table leave direct fetching disabled.
+enabled = false
+client_id = "replace-me-mal-client-id"

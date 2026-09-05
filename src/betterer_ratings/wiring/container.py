@@ -7,6 +7,7 @@ from betterer_ratings.config.schema import AppConfig, ensure_app_config
 from betterer_ratings.infra.db.local_database import LocalDatabase
 from betterer_ratings.infra.rate_limit.limiter import AsyncWindowLimiter
 from betterer_ratings.infra.rate_limit.service_gate import ServiceGate
+from betterer_ratings.providers.mal_client import MALClient
 from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.pmdb_client import PMDBClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
@@ -29,6 +30,7 @@ class AppContainer:
     pmdb_client: PMDBClient
     harvester: Harvester
     submitter: Submitter
+    mal_client: MALClient | None = None
 
 
 def build_container(*, config: AppConfig) -> AppContainer:
@@ -105,11 +107,19 @@ def build_container(*, config: AppConfig) -> AppContainer:
         mapping_gate=pmdb_mapping_gate,
     )
 
+    mal_client = None
+    if app_config.mal.enabled:
+        mal_gate = ServiceGate(
+            "mal", db, AsyncWindowLimiter(max_requests=1, period_seconds=1.1, name="mal")
+        )
+        mal_client = MALClient(client_id=app_config.mal.client_id, gate=mal_gate)
+
     harvester = Harvester(
         config=app_config,
         db=db,
         tmdb_client=tmdb_client,
         mdblist_client=mdblist_client,
+        mal_client=mal_client,
     )
     submitter = Submitter(
         config=app_config,
@@ -128,6 +138,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
         pmdb_mapping_gate=pmdb_mapping_gate,
         tmdb_client=tmdb_client,
         mdblist_client=mdblist_client,
+        mal_client=mal_client,
         pmdb_client=pmdb_client,
         harvester=harvester,
         submitter=submitter,

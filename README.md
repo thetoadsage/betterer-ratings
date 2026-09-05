@@ -115,3 +115,31 @@ by Docker.
 
 Logs are structured JSON on stdout. Docker or your host logging stack should
 handle collection, retention, and rotation.
+
+## Direct MyAnimeList ratings
+
+Set `enabled = true` and `client_id = "your-client-id"` under `[mal]` to enrich
+existing titles through the official MyAnimeList API. Register an application at
+https://myanimelist.net/apiconfig to obtain the Client ID. Public rating reads do
+not use a client secret or OAuth redirect. Keep your actual configuration out of
+Git. Direct fetching is disabled in the example and when the section is omitted.
+
+The worker uses MAL IDs supplied by MDBList, falling back to stored MAL mappings.
+It does not discover anime or search by title. Direct results must match a TMDB
+name (ignoring case and punctuation) and media format. Movies must also match
+release year. TV/ONA entries must be finished, match an ended single-season TMDB
+show, and agree on total episode count and first/last airing dates. Missing or
+ambiguous metadata is skipped; this deliberately favors accuracy over coverage.
+
+A usable direct score replaces MDBList's `ML` score before the existing database
+and submission queue are updated. Missing scores, mismatches, and provider errors
+leave the MDBList fallback unchanged. Scores require at least one vote and are
+converted from 0–10 to 0–100. Refreshes follow `worker.title_refresh_days`; optional
+MAL failures do not fail the title or trigger an independent retry queue.
+
+Requests are paced at one per 1.1 seconds, with the existing HTTP retry and
+persisted service-pause handling. Each title's optional MAL fetch is bounded to
+35 seconds. `[MAL]` logs report successes, skipped mappings, missing scores, and
+failures; the `mal` service state records provider responses and pauses. Existing
+MDBList ratings are not retrospectively filtered by these new matching rules.
+AniList and external anime mapping datasets are not included.

@@ -29,6 +29,7 @@ class HarvesterCycleMixin:
         details: Optional[Dict[str, Any]],
         md_item: Optional[Dict[str, Any]],
         now_ts: int,
+        mal_score: Optional[float] = None,
     ) -> Tuple[int, int, int, int, int]:
         return harvest_enrichment.save_candidate_enrichment(
             db=self.db,
@@ -36,6 +37,7 @@ class HarvesterCycleMixin:
             details=details,
             md_item=md_item,
             now_ts=now_ts,
+            mal_score=mal_score,
             parse_mdblist_ratings_fn=parse_mdblist_ratings,
             parse_tmdb_vote_average_fn=parse_tmdb_vote_average,
             extract_mappings_fn=extract_mappings,

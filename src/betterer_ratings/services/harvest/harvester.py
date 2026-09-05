@@ -17,6 +17,7 @@ from betterer_ratings.core.scoring import clamp_0_100
 from betterer_ratings.domain import models as domain_models
 from betterer_ratings.infra.db.imdb_cache_repo import IMDbTMDBCache
 from betterer_ratings.infra.db.local_database import LocalDatabase
+from betterer_ratings.providers.mal_client import MALClient
 from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
 from betterer_ratings.services.harvest import imdb_index_io as harvest_imdb_index_io
@@ -86,11 +87,13 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         db: LocalDatabase,
         tmdb_client: TMDBClient,
         mdblist_client: MDBListClient,
+        mal_client: MALClient | None = None,
     ):
         self.config = config
         self.db = db
         self.tmdb_client = tmdb_client
         self.mdblist_client = mdblist_client
+        self.mal_client = mal_client
         harvest_setup.configure_harvester(
             harvester=self,
             config=config,
