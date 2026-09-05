@@ -190,8 +190,17 @@ def test_services_api_hides_expired_pause_reason() -> None:
     payload = json.loads(response.text)
     services = {svc["service"]: svc for svc in payload["services"]}
 
+    assert list(services) == [
+        "tmdb",
+        "mdblist",
+        "mal",
+        "pmdb_api",
+        "pmdb_ratings",
+        "pmdb_mappings",
+    ]
     assert services["tmdb"]["is_paused"] is False
     assert services["tmdb"]["pause_remaining_seconds"] == 0
     assert services["tmdb"]["pause_reason"] is None
     assert services["mdblist"]["is_paused"] is True
     assert services["mdblist"]["pause_reason"] == "Daily limit reached"
+    assert services["mal"]["last_status"] is None

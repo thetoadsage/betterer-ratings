@@ -57,7 +57,7 @@ async def handle_services(request: web.Request) -> web.Response:
     db = request.app["db"]
     ts = now_epoch()
     services = []
-    for svc_name in ("tmdb", "mdblist", "pmdb_api", "pmdb_ratings", "pmdb_mappings"):
+    for svc_name in ("tmdb", "mdblist", "mal", "pmdb_api", "pmdb_ratings", "pmdb_mappings"):
         row = db.get_service_state(svc_name)
         if row:
             svc = dict(row)
