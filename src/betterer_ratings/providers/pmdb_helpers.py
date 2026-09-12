@@ -7,6 +7,9 @@ from betterer_ratings.core.retry import parse_retry_after
 from betterer_ratings.core.scoring import score_to_tenths
 from betterer_ratings.domain.models import APIResponse, PMDBDeleteResult, PMDBSubmitResult
 
+# Include Cloudflare connection/read timeouts in the bounded queue retry policy.
+PMDB_TRANSIENT_STATUSES = frozenset({0, 500, 502, 503, 504, 522, 524})
+
 
 def is_cloudflare_challenge(response: APIResponse) -> bool:
     # A `cf-ray` header is present on virtually every Cloudflare-proxied
@@ -118,7 +121,7 @@ def to_submit_result(response: APIResponse, endpoint: str = "") -> PMDBSubmitRes
             endpoint=endpoint,
         )
 
-    if response.status in (500, 502, 503, 504, 0):
+    if response.status in PMDB_TRANSIENT_STATUSES:
         return PMDBSubmitResult(
             success=False,
             retryable=True,
@@ -194,7 +197,7 @@ def to_delete_result(response: APIResponse, endpoint: str = "") -> PMDBDeleteRes
             endpoint=endpoint,
         )
 
-    if response.status in (500, 502, 503, 504, 0):
+    if response.status in PMDB_TRANSIENT_STATUSES:
         return PMDBDeleteResult(
             success=False,
             retryable=True,

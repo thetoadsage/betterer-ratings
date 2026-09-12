@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Sequence
 
+from betterer_ratings.providers.pmdb_helpers import PMDB_TRANSIENT_STATUSES
+
 
 async def submit_episode_ratings_batch(
     *,
@@ -204,7 +206,7 @@ async def submit_episode_ratings_batch(
 
     status_code = int(response.status or 0)
     cloudflare_challenge = is_cloudflare_challenge_fn(response)
-    retryable = status_code in {0, 401, 429, 500, 502, 503, 504, 207} or cloudflare_challenge
+    retryable = status_code in PMDB_TRANSIENT_STATUSES | {401, 429, 207} or cloudflare_challenge
     error_code = extract_error_code_fn(response.data, response.text or "")
     base_retry_after = (
         parse_retry_after_fn(response.headers.get("retry-after"), 30)

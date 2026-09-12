@@ -134,7 +134,7 @@ def test_zero_owners_falls_back_to_duplicate_unresolved():
 
 
 def test_transient_lookup_statuses_stay_retryable():
-    for status in (429, 500, 502, 503, 504, 0):
+    for status in (429, 500, 502, 503, 504, 522, 524, 0):
         response = _response(status=status, text="boom")
         _client, result = _resolve(
             response,

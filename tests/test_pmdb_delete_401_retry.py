@@ -17,10 +17,15 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Optional
 
+import pytest
+
 from betterer_ratings.core.parsing import first_non_empty
 from betterer_ratings.domain.models import APIResponse
 from betterer_ratings.providers.pmdb_client import PMDBClient
-from betterer_ratings.providers.pmdb_submission_rating import submit_rating
+from betterer_ratings.providers.pmdb_submission_rating import (
+    replace_rating_after_duplicate,
+    submit_rating,
+)
 from betterer_ratings.services.submit import handler_rating
 from betterer_ratings.services.submit.retry_policy import (
     format_manual_error,
@@ -274,3 +279,56 @@ def test_delete_401_pauses_both_pmdb_gates_for_300s():
 
     assert api_gate.paused == [(300, "PMDB unauthorized")]
     assert rating_gate.paused == [(300, "PMDB unauthorized")]
+
+
+@pytest.mark.parametrize("status", [522, 524])
+def test_cloudflare_timeout_retries_delete_and_create(status):
+    response = _response(status=status, text="Cloudflare origin timed out")
+    for convert in (PMDBClient._to_delete_result, PMDBClient._to_submit_result):
+        result = convert(response, endpoint="/api/external/ratings")
+        assert not result.success
+        assert result.retryable
+        assert result.retry_after_seconds == 30
+        assert result.status_code == status
+
+
+@pytest.mark.parametrize("status", [522, 524])
+def test_handler_retries_cloudflare_delete_timeout_without_losing_cached_id(status):
+    client = _client({"DELETE": _response(status=status, text="Origin timed out")})
+    db = _FakeRatingDB()
+    _run_handler(client=client, db=db)
+    assert not db.failed
+    assert not db.submitted
+    assert not db.cleared
+    assert len(db.retried) == 1
+    assert db.retried[0][3] == 1030
+    assert f'"status":{status}' in db.retried[0][4]
+    assert '"retryable":true' in db.retried[0][4]
+    assert client.http.calls == [
+        ("DELETE", f"https://publicmetadb.com/api/external/ratings/{CACHED_RATING_ID}")
+    ]
+
+
+@pytest.mark.parametrize("status", [522, 524])
+def test_cloudflare_timeout_still_obeys_retry_limit(status):
+    client = _client({"DELETE": _response(status=status, text="Origin timed out")})
+    db = _FakeRatingDB()
+    _run_handler(client=client, db=db, attempts=4)
+    assert not db.retried
+    assert len(db.failed) == 1
+    assert 'max_retry_attempts_exceeded' in db.failed[0][3]
+
+
+@pytest.mark.parametrize("status", [522, 524])
+def test_cloudflare_timeout_during_duplicate_lookup_stops_before_delete(status):
+    client = _client({"GET": _response(status=status, text="Origin timed out")})
+    result = asyncio.run(replace_rating_after_duplicate(
+        client, tmdb_id=1510329, media_type="movie", label="TM", score=80.0,
+        known_item_id=CACHED_RATING_ID,
+    ))
+    assert not result.success
+    assert result.retryable
+    assert result.status_code == status
+    assert result.endpoint == "/api/external/ratings"
+    assert client.http.calls
+    assert all(method == "GET" for method, _url in client.http.calls)

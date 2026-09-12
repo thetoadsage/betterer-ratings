@@ -5,6 +5,7 @@ from typing import Any, List, Optional, cast
 
 from betterer_ratings.core.retry import parse_retry_after
 from betterer_ratings.domain.models import PMDBDeleteResult, PMDBSubmitResult
+from betterer_ratings.providers.pmdb_helpers import PMDB_TRANSIENT_STATUSES
 
 
 async def delete_rating_by_id(client: Any, rating_id: str) -> PMDBDeleteResult:
@@ -33,7 +34,7 @@ async def replace_rating_after_duplicate(
     known_item_id: Optional[str],
 ) -> PMDBSubmitResult:
     lookup = await client._fetch_existing_ratings(tmdb_id, media_type)
-    if lookup.status in (429, 500, 502, 503, 504, 0):
+    if lookup.status in PMDB_TRANSIENT_STATUSES | {429}:
         return PMDBSubmitResult(
             success=False,
             retryable=True,
