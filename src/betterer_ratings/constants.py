@@ -65,6 +65,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 CONTAINER_DATABASE_PATH = "/data/db/betterer_ratings.sqlite3"
 CONTAINER_IMDB_ARCHIVE_PATH = "/data/imdb"
+CONTAINER_ANIME_OFFLINE_DATABASE_PATH = "/data/anime-offline-database/anime-offline-database.jsonl"
 CONTAINER_TEMP_PATH = "/data/temp"
 IMDB_ARCHIVE_TITLE_BATCH_SIZE = 100_000
 IMDB_ARCHIVE_REFRESH_HOUR_UTC = 13

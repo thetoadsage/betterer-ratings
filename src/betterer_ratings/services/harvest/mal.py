@@ -77,7 +77,7 @@ def mal_score(anime: dict[str, Any]) -> float | None:
 
 async def fetch_candidate_mal_score(
     *, client: Any, db: Any, candidate: Any, details: Any, md_item: Any,
-    stop_event: asyncio.Event,
+    stop_event: asyncio.Event, anime_mapping_cache: Any | None = None,
 ) -> float | None:
     def outcome(reason: str, score: float | None = None) -> float | None:
         LOGGER.info(
@@ -95,6 +95,10 @@ async def fetch_candidate_mal_score(
         raw_id = db.get_title_mapping(
             tmdb_id=candidate.tmdb_id, media_type=candidate.media_type, id_type="mal"
         )
+    if raw_id is None and anime_mapping_cache is not None and (
+        mappings.get("anilist") is not None or mappings.get("anidb") is not None
+    ):
+        raw_id = await anime_mapping_cache.resolve(mappings)
     # Most titles are not anime: avoid per-title noise and requests for these.
     if raw_id is None:
         return None

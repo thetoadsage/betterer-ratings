@@ -22,6 +22,7 @@ from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
 from betterer_ratings.services.harvest import imdb_index_io as harvest_imdb_index_io
 from betterer_ratings.services.harvest import setup as harvest_setup
+from betterer_ratings.services.harvest.anime_offline_database import AnimeOfflineDatabase
 from betterer_ratings.services.harvest.discovery_local import (
     mdblist_daily_quota_pause_until,
     source_scan_due,
@@ -88,12 +89,14 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         tmdb_client: TMDBClient,
         mdblist_client: MDBListClient,
         mal_client: MALClient | None = None,
+        anime_mapping_cache: AnimeOfflineDatabase | None = None,
     ):
         self.config = config
         self.db = db
         self.tmdb_client = tmdb_client
         self.mdblist_client = mdblist_client
         self.mal_client = mal_client
+        self.anime_mapping_cache = anime_mapping_cache
         harvest_setup.configure_harvester(
             harvester=self,
             config=config,

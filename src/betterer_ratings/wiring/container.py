@@ -11,6 +11,7 @@ from betterer_ratings.providers.mal_client import MALClient
 from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.pmdb_client import PMDBClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
+from betterer_ratings.services.harvest.anime_offline_database import AnimeOfflineDatabase
 from betterer_ratings.services.harvest.harvester import Harvester
 from betterer_ratings.services.submit.submitter import Submitter
 
@@ -31,6 +32,7 @@ class AppContainer:
     harvester: Harvester
     submitter: Submitter
     mal_client: MALClient | None = None
+    anime_mapping_cache: AnimeOfflineDatabase | None = None
 
 
 def build_container(*, config: AppConfig) -> AppContainer:
@@ -108,11 +110,15 @@ def build_container(*, config: AppConfig) -> AppContainer:
     )
 
     mal_client = None
+    anime_mapping_cache = None
     if app_config.mal.enabled:
         mal_gate = ServiceGate(
             "mal", db, AsyncWindowLimiter(max_requests=1, period_seconds=1.1, name="mal")
         )
         mal_client = MALClient(client_id=app_config.mal.client_id, gate=mal_gate)
+        anime_mapping_cache = AnimeOfflineDatabase(
+            Path(app_config.runtime.anime_offline_database_path).expanduser()
+        )
 
     harvester = Harvester(
         config=app_config,
@@ -120,6 +126,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
         tmdb_client=tmdb_client,
         mdblist_client=mdblist_client,
         mal_client=mal_client,
+        anime_mapping_cache=anime_mapping_cache,
     )
     submitter = Submitter(
         config=app_config,
@@ -139,6 +146,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
         tmdb_client=tmdb_client,
         mdblist_client=mdblist_client,
         mal_client=mal_client,
+        anime_mapping_cache=anime_mapping_cache,
         pmdb_client=pmdb_client,
         harvester=harvester,
         submitter=submitter,

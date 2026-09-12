@@ -125,11 +125,16 @@ not use a client secret or OAuth redirect. Keep your actual configuration out of
 Git. Direct fetching is disabled in the example and when the section is omitted.
 
 The worker uses MAL IDs supplied by MDBList, falling back to stored MAL mappings.
-It does not discover anime or search by title. Direct results must match a TMDB
-name (ignoring case and punctuation) and media format. Movies must also match
-release year. TV/ONA entries must be finished, match an ended single-season TMDB
-show, and agree on total episode count and first/last airing dates. Missing or
-ambiguous metadata is skipped; this deliberately favors accuracy over coverage.
+When neither exists but MDBList has an AniList or AniDB ID, it uses a local cache
+of [anime-offline-database](https://github.com/cedya77/anime-offline-database)
+to resolve a MAL ID. The cache is refreshed weekly from its release JSONL and
+keeps the last successful copy if a refresh fails. It never searches by title,
+does not bridge TMDB/IMDb directly, and skips lookup conflicts. Direct results
+must match a TMDB name (ignoring case and punctuation) and media format. Movies
+must also match release year. TV/ONA entries must be finished, match an ended
+single-season TMDB show, and agree on total episode count and first/last airing
+dates. Missing or ambiguous metadata is skipped; this deliberately favors
+accuracy over coverage.
 
 A usable direct score replaces MDBList's `ML` score before the existing database
 and submission queue are updated. Missing scores, mismatches, and provider errors

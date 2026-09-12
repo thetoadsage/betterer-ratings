@@ -1,4 +1,6 @@
 import asyncio
+import os
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -14,6 +16,11 @@ from betterer_ratings.infra.rate_limit.limiter import AsyncWindowLimiter
 from betterer_ratings.infra.rate_limit.service_gate import ServiceGate
 from betterer_ratings.providers.mal_client import MALClient
 from betterer_ratings.providers.mdblist_client import MDBListClient
+from betterer_ratings.services.harvest.anime_offline_database import (
+    AnimeOfflineDatabase,
+    build_mal_lookup,
+    resolve_mal_id,
+)
 from betterer_ratings.services.harvest.cycle_mdblist_phase import run_mdblist_enrichment_phase
 from betterer_ratings.services.harvest.enrichment import save_candidate_enrichment
 from betterer_ratings.services.harvest.mal import (
@@ -27,6 +34,53 @@ ANIME = {"mal_id": 164, "title": "Mononoke Hime", "title_english": "Princess Mon
          "type": "Movie", "aired": {"from": "1997-07-12T00:00:00+00:00"},
          "score": 8.67, "scored_by": 1000}
 CANDIDATE = Candidate(128, "movie", "Princess Mononoke", 1)
+
+
+def test_anime_offline_database_lookup_requires_an_unambiguous_mal_id():
+    lookup = build_mal_lookup([
+        '{"license": "metadata line"}\n',
+        '{"sources": ["https://anilist.co/anime/10", "https://anidb.net/anime/20", '
+        '"https://myanimelist.net/anime/30"]}\n',
+        '{"sources": ["https://anidb.net/anime/99", "https://myanimelist.net/anime/31"]}\n',
+        '{"sources": ["https://anilist.co/anime/11", "https://myanimelist.net/anime/31"]}\n',
+        '{"sources": ["https://anilist.co/anime/11", "https://myanimelist.net/anime/32"]}\n',
+    ])
+    assert resolve_mal_id({"anilist": "10"}, lookup) == "30"
+    assert resolve_mal_id({"anidb": 20}, lookup) == "30"
+    assert resolve_mal_id({"anilist": "10", "anidb": "20"}, lookup) == "30"
+    assert resolve_mal_id({"anilist": "11"}, lookup) is None
+    assert resolve_mal_id({"anilist": "10", "anidb": "999"}, lookup) == "30"
+    assert resolve_mal_id({"anilist": "10", "anidb": "99"}, lookup) is None
+
+
+def test_anime_offline_database_uses_fresh_local_cache_without_downloading(tmp_path):
+    cache_path = tmp_path / "anime-offline-database.jsonl"
+    cache_path.write_text(
+        '{"sources": ["https://anilist.co/anime/10", '
+        '"https://myanimelist.net/anime/30"]}\n', encoding="utf-8"
+    )
+    now = time.time()
+    os.utime(cache_path, (now, now))
+    cache = AnimeOfflineDatabase(cache_path, url="https://invalid.example/dataset")
+    assert asyncio.run(cache.resolve({"anilist": "10"})) == "30"
+
+
+def test_anime_offline_database_retains_cached_copy_after_failed_refresh(tmp_path):
+    cache_path = tmp_path / "anime-offline-database.jsonl"
+    cache_path.write_text(
+        '{"sources": ["https://anilist.co/anime/10", '
+        '"https://myanimelist.net/anime/30"]}\n', encoding="utf-8"
+    )
+    old = time.time() - 8 * 24 * 60 * 60
+    os.utime(cache_path, (old, old))
+    cache = AnimeOfflineDatabase(cache_path, url="https://example.test/dataset")
+
+    async def run():
+        with respx.mock() as mock:
+            mock.get("https://example.test/dataset").mock(return_value=httpx.Response(503))
+            return await cache.resolve({"anilist": "10"})
+
+    assert asyncio.run(run()) == "30"
 
 
 def test_config_opt_in_and_validation(base_valid_config):
@@ -100,6 +154,18 @@ def test_missing_invalid_mapping_and_stop_do_not_fetch(local_db):
         md_item={"ids": {"mal": 164}}, stop_event=stop,
     ))
     client.fetch_anime.assert_not_awaited()
+
+
+def test_anilist_mapping_fallback_fetches_official_mal_score(local_db):
+    cache = SimpleNamespace(resolve=AsyncMock(return_value="164"))
+    client = SimpleNamespace(fetch_anime=AsyncMock(return_value=APIResponse(200, {}, {"data": ANIME}, "")))
+    assert asyncio.run(fetch_candidate_mal_score(
+        client=client, db=local_db, candidate=CANDIDATE, details=MOVIE,
+        md_item={"ids": {"anilist": 5114}}, stop_event=asyncio.Event(),
+        anime_mapping_cache=cache,
+    )) == 86.7
+    cache.resolve.assert_awaited_once_with({"anilist": "5114"})
+    client.fetch_anime.assert_awaited_once_with(164)
 
 
 @pytest.mark.parametrize("error", [TimeoutError, asyncio.CancelledError])

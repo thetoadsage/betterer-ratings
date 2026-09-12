@@ -146,6 +146,10 @@ class RuntimeConfig:
         return package_constants.CONTAINER_IMDB_ARCHIVE_PATH
 
     @property
+    def anime_offline_database_path(self) -> str:
+        return package_constants.CONTAINER_ANIME_OFFLINE_DATABASE_PATH
+
+    @property
     def temp_path(self) -> str:
         return package_constants.CONTAINER_TEMP_PATH
 
