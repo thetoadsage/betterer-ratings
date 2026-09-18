@@ -194,6 +194,7 @@ def test_services_api_hides_expired_pause_reason() -> None:
         "tmdb",
         "mdblist",
         "mal",
+        "jikan",
         "pmdb_api",
         "pmdb_ratings",
         "pmdb_mappings",

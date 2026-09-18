@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 import betterer_ratings.constants as package_constants
 
@@ -338,6 +339,38 @@ class MALConfig:
 
 
 @dataclass(frozen=True)
+class JikanConfig:
+    enabled: bool = False
+    base_url: str = ""
+    discover_missing: bool = True
+    fallback: bool = True
+    max_search_pages: int = 4
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "JikanConfig":
+        _reject_unknown_keys(value, allowed={"enabled", "base_url", "discover_missing", "fallback", "max_search_pages"}, path="jikan")
+        flags = {k: value.get(k, k != "enabled") for k in ("enabled", "discover_missing", "fallback")}
+        for key, flag in flags.items():
+            if not isinstance(flag, bool):
+                raise ConfigValidationError(f"jikan.{key} must be a boolean")
+        url = _as_str(value.get("base_url", ""), path="jikan.base_url").strip().rstrip("/")
+        try:
+            parsed = urlsplit(url)
+            valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not (
+                parsed.username or parsed.password or parsed.query or parsed.fragment
+            )
+            _ = parsed.port
+        except ValueError:
+            valid = False
+        if (url or flags["enabled"]) and not valid:
+            raise ConfigValidationError("jikan.base_url must be an HTTP(S) URL without credentials, query or fragment")
+        pages = _as_int(value.get("max_search_pages", 4), path="jikan.max_search_pages")
+        if not 1 <= pages <= 10:
+            raise ConfigValidationError("jikan.max_search_pages must be between 1 and 10")
+        return JikanConfig(base_url=url, max_search_pages=pages, **flags)
+
+
+@dataclass(frozen=True)
 class PMDBConfig:
     api_rate_limit: RateLimitConfig
     ratings_limit: RateLimitConfig
@@ -387,12 +420,13 @@ class AppConfig:
     mdblist: MDBListConfig
     pmdb: PMDBConfig
     mal: MALConfig = MALConfig()
+    jikan: JikanConfig = JikanConfig()
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "AppConfig":
         _reject_unknown_keys(
             value,
-            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "mal"},
+            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "mal", "jikan"},
             path="<root>",
         )
         api_keys = APIKeysConfig.from_mapping(
@@ -403,6 +437,10 @@ class AppConfig:
         imdb = IMDbConfig.from_mapping(_require_mapping(value.get("imdb"), path="imdb"))
         mdblist = MDBListConfig.from_mapping(_require_mapping(value.get("mdblist"), path="mdblist"))
         pmdb = PMDBConfig.from_mapping(_require_mapping(value.get("pmdb"), path="pmdb"))
+        jikan = JikanConfig.from_mapping(_require_mapping(value.get("jikan", {}), path="jikan"))
+        mal = MALConfig.from_mapping(_require_mapping(value.get("mal", {}), path="mal"))
+        if jikan.enabled and not mal.enabled:
+            raise ConfigValidationError("jikan.enabled requires mal.enabled")
         return AppConfig(
             api_keys=api_keys,
             runtime=runtime,
@@ -410,7 +448,8 @@ class AppConfig:
             imdb=imdb,
             mdblist=mdblist,
             pmdb=pmdb,
-            mal=MALConfig.from_mapping(_require_mapping(value.get("mal", {}), path="mal")),
+            mal=mal,
+            jikan=jikan,
         )
 
 

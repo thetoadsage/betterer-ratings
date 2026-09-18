@@ -77,3 +77,13 @@ mappings_limit = { requests = 15, per_seconds = 1.0 }
 # Existing configs without this table leave direct fetching disabled.
 enabled = false
 client_id = "replace-me-mal-client-id"
+
+# Optional self-hosted Jikan discovery and score fallback. Requires mal.enabled.
+# Both containers must share a private Docker network; the URL includes /v4.
+[jikan]
+enabled = false
+base_url = "http://jikan_rest:8080/v4"
+discover_missing = true
+fallback = true
+# Incomplete searches are rejected; raising this does not extend the 25s deadline.
+max_search_pages = 4

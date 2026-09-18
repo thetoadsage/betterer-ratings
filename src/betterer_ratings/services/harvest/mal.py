@@ -78,12 +78,15 @@ def mal_score(anime: dict[str, Any]) -> float | None:
 async def fetch_candidate_mal_score(
     *, client: Any, db: Any, candidate: Any, details: Any, md_item: Any,
     stop_event: asyncio.Event, anime_mapping_cache: Any | None = None,
+    jikan: Any | None = None,
 ) -> float | None:
+    source = "official_mal"
+
     def outcome(reason: str, score: float | None = None) -> float | None:
         LOGGER.info(
             "[MAL] %s tmdb=%s/%s score=%s", reason, candidate.media_type,
             candidate.tmdb_id, score,
-            extra={"event": "mal.enrichment", "outcome": reason},
+            extra={"event": "mal.enrichment", "outcome": reason, "source": source},
         )
         return score
 
@@ -99,17 +102,18 @@ async def fetch_candidate_mal_score(
         mappings.get("anilist") is not None or mappings.get("anidb") is not None
     ):
         raw_id = await anime_mapping_cache.resolve(mappings)
-    # Most titles are not anime: avoid per-title noise and requests for these.
-    if raw_id is None:
-        return None
-    if not str(raw_id).isascii() or not str(raw_id).isdigit() or int(raw_id) <= 0:
-        return outcome("invalid_mapping")
     if not isinstance(details, dict):
-        return outcome("missing_tmdb_details")
+        return outcome("missing_tmdb_details") if raw_id is not None else None
     if candidate.media_type == "tv" and (
         details.get("status") != "Ended" or details.get("number_of_seasons") != 1
     ):
-        return outcome("skipped_series_scope")
+        return outcome("skipped_series_scope") if raw_id is not None else None
+    if raw_id is None and jikan is not None:
+        raw_id = await jikan.resolve(candidate.media_type, details)
+    if raw_id is None or stop_event.is_set():
+        return None
+    if not str(raw_id).isascii() or not str(raw_id).isdigit() or int(raw_id) <= 0:
+        return outcome("invalid_mapping")
 
     # Bound optional enrichment, including Retry-After sleeps, so failures cannot
     # hold a whole MDBList chunk indefinitely. Cancellation remains propagated.
@@ -117,6 +121,19 @@ async def fetch_candidate_mal_score(
         async with asyncio.timeout(35):
             response = await client.fetch_anime(int(raw_id))
     except TimeoutError:
+        response = None
+    # Only unavailable/missing official results use the optional fallback. A valid
+    # official response with mismatched metadata or no score remains authoritative.
+    if jikan is not None and jikan.config.fallback and not stop_event.is_set() and (
+        response is None or response.status in {0, 404, 429} or response.status >= 500
+    ):
+        source = "jikan"
+        try:
+            async with asyncio.timeout(10):
+                response = await jikan.client.fetch_anime(int(raw_id))
+        except TimeoutError:
+            return outcome("timeout")
+    if response is None:
         return outcome("timeout")
     if response.status != 200:
         return outcome("not_found" if response.status == 404 else "provider_failure")

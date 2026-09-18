@@ -41,6 +41,7 @@ async def run_mdblist_enrichment_phase(
                 client=self.mal_client, db=self.db, candidate=candidate,
                 details=details, md_item=md_item, stop_event=stop_event,
                 anime_mapping_cache=getattr(self, "anime_mapping_cache", None),
+                jikan=getattr(self, "jikan", None),
             )
         return self._save_candidate_enrichment(**kwargs)
 

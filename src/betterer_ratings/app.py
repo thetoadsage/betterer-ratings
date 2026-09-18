@@ -118,6 +118,8 @@ async def run_app(config: AppConfig) -> None:
             await container.mdblist_client.aclose()
             if container.mal_client is not None:
                 await container.mal_client.aclose()
+            if container.jikan is not None:
+                await container.jikan.client.aclose()
             await container.pmdb_client.aclose()
             container.db.close()
 

@@ -50,6 +50,7 @@ from betterer_ratings.services.harvest.imdb_index_build_title import (
     ensure_imdb_index,
     rebuild_imdb_index,
 )
+from betterer_ratings.services.harvest.jikan import JikanEnrichment
 
 LOGGER = logging.getLogger("betterer-ratings")
 
@@ -90,6 +91,7 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         mdblist_client: MDBListClient,
         mal_client: MALClient | None = None,
         anime_mapping_cache: AnimeOfflineDatabase | None = None,
+        jikan: JikanEnrichment | None = None,
     ):
         self.config = config
         self.db = db
@@ -97,6 +99,7 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         self.mdblist_client = mdblist_client
         self.mal_client = mal_client
         self.anime_mapping_cache = anime_mapping_cache
+        self.jikan = jikan
         harvest_setup.configure_harvester(
             harvester=self,
             config=config,

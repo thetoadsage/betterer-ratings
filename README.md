@@ -128,7 +128,7 @@ The worker uses MAL IDs supplied by MDBList, falling back to stored MAL mappings
 When neither exists but MDBList has an AniList or AniDB ID, it uses a local cache
 of [anime-offline-database](https://github.com/cedya77/anime-offline-database)
 to resolve a MAL ID. The cache is refreshed weekly from its release JSONL and
-keeps the last successful copy if a refresh fails. It never searches by title,
+keeps the last successful copy if a refresh fails. This ID bridge never searches by title,
 does not bridge TMDB/IMDb directly, and skips lookup conflicts. Direct results
 must match a TMDB name (ignoring case and punctuation) and media format. Movies
 must also match release year. TV/ONA entries must be finished, match an ended
@@ -147,4 +147,49 @@ persisted service-pause handling. Each title's optional MAL fetch is bounded to
 35 seconds. `[MAL]` logs report successes, skipped mappings, missing scores, and
 failures; the `mal` service state records provider responses and pauses. Existing
 MDBList ratings are not retrospectively filtered by these new matching rules.
-AniList and external anime mapping datasets are not included.
+AniList scores are not included.
+
+### Optional self-hosted Jikan
+
+`[jikan]` is disabled by default. Enable it only alongside `[mal]`, with an explicit
+`base_url` such as `http://jikan_rest:8080/v4`. Betterer Ratings and Jikan must share
+a private Docker network; no public Jikan port is needed.
+
+With `discover_missing = true`, Japanese-language animation without a resolved MAL
+ID is searched using its TMDB display and original titles. Every result page for
+both queries must complete within 25 seconds and `max_search_pages` (default 4 per
+query, maximum 10). Failed, malformed, repeated, or truncated searches are rejected.
+Only one distinct MAL ID may pass the existing title, format, and date/episode
+checks, even if another matching entry has no score. Ongoing and multi-season
+shows remain excluded. The selected ID is fetched through the official MAL API
+and its metadata and score are validated again.
+
+With `fallback = true`, an official MAL timeout, network failure, HTTP 404/429, or
+5xx may use Jikan's anime-by-ID endpoint. Official successful responses remain
+authoritative, including mismatches or missing scores; 401/403 responses do not
+trigger fallback. Jikan scores must pass the same checks. Unusable enrichment
+preserves MDBList's score. Jikan is paced at one request per 1.1 seconds, with a
+10-second fallback budget; discovery, official lookup, and fallback together may
+take up to 70 seconds plus waiting for the discovery lock. Cancellation propagates.
+
+Discovery decisions are cached under `/data/temp/jikan-discovery`: matches for a
+day, complete negative/ambiguous results for an hour, and failures/incomplete
+searches for five minutes. Endpoint or matching-metadata changes invalidate the
+decision. Scores are fetched again on enrichment; discovered IDs are not inserted
+into the PMDB mapping queue. Logs include `jikan.discovery` outcomes and a `source`
+of `official_mal` or `jikan` on `mal.enrichment` events. The generic service state
+records Jikan requests and pauses. Jikan's own cache can be stale and remains
+dependent on upstream MAL.
+
+Preview selected titles without submissions or production database writes:
+
+```bash
+PYTHONPATH=src python scripts/preview_jikan.py \
+  --config /config/config.toml \
+  --database /data/db/betterer_ratings.sqlite3 \
+  --jikan-url http://jikan_rest:8080/v4 \
+  --title movie:1542261 --title movie:52795
+```
+
+The preview uses a temporary discovery cache, GET-only provider clients, and SQLite
+`mode=ro` with `PRAGMA query_only=ON`. Normal Jikan GET requests may warm its cache.

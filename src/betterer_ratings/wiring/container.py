@@ -7,12 +7,14 @@ from betterer_ratings.config.schema import AppConfig, ensure_app_config
 from betterer_ratings.infra.db.local_database import LocalDatabase
 from betterer_ratings.infra.rate_limit.limiter import AsyncWindowLimiter
 from betterer_ratings.infra.rate_limit.service_gate import ServiceGate
+from betterer_ratings.providers.jikan_client import JikanClient
 from betterer_ratings.providers.mal_client import MALClient
 from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.pmdb_client import PMDBClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
 from betterer_ratings.services.harvest.anime_offline_database import AnimeOfflineDatabase
 from betterer_ratings.services.harvest.harvester import Harvester
+from betterer_ratings.services.harvest.jikan import JikanEnrichment
 from betterer_ratings.services.submit.submitter import Submitter
 
 
@@ -33,6 +35,7 @@ class AppContainer:
     submitter: Submitter
     mal_client: MALClient | None = None
     anime_mapping_cache: AnimeOfflineDatabase | None = None
+    jikan: JikanEnrichment | None = None
 
 
 def build_container(*, config: AppConfig) -> AppContainer:
@@ -120,6 +123,15 @@ def build_container(*, config: AppConfig) -> AppContainer:
             Path(app_config.runtime.anime_offline_database_path).expanduser()
         )
 
+    jikan = None
+    if app_config.jikan.enabled:
+        jikan_gate = ServiceGate("jikan", db, AsyncWindowLimiter(1, 1.1, "jikan"))
+        jikan = JikanEnrichment(
+            client=JikanClient(base_url=app_config.jikan.base_url, gate=jikan_gate),
+            config=app_config.jikan,
+            cache_dir=Path(app_config.runtime.temp_path) / "jikan-discovery",
+        )
+
     harvester = Harvester(
         config=app_config,
         db=db,
@@ -127,6 +139,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
         mdblist_client=mdblist_client,
         mal_client=mal_client,
         anime_mapping_cache=anime_mapping_cache,
+        jikan=jikan,
     )
     submitter = Submitter(
         config=app_config,
@@ -147,6 +160,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
         mdblist_client=mdblist_client,
         mal_client=mal_client,
         anime_mapping_cache=anime_mapping_cache,
+        jikan=jikan,
         pmdb_client=pmdb_client,
         harvester=harvester,
         submitter=submitter,
