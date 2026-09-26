@@ -11,6 +11,7 @@ def save_candidate_enrichment(
     md_item: Optional[Dict[str, Any]],
     now_ts: int,
     mal_score: Optional[float] = None,
+    mdblist_attempted: bool = True,
     parse_mdblist_ratings_fn: Callable[[Optional[Dict[str, Any]]], Dict[str, float]],
     parse_tmdb_vote_average_fn: Callable[[Optional[Dict[str, Any]]], Optional[float]],
     extract_mappings_fn: Callable[
@@ -26,11 +27,17 @@ def save_candidate_enrichment(
 
     mappings = extract_mappings_fn(candidate.media_type, details, md_item)
     imdb_id = mappings.get("imdb")
+    archive = db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "imdb")
+    archive_data = archive["payload"]
+    if (archive_data and archive["next_due"] > now_ts
+            and (not imdb_id or archive_data["imdb_id"] == imdb_id)):
+        ratings["IM"] = archive_data["score"]
+
 
     error_reasons = []
     if details is None:
         error_reasons.append("TMDB details failed or unavailable")
-    if md_item is None:
+    if md_item is None and mdblist_attempted:
         error_reasons.append("MDBList item missing or unavailable")
     enrichment_error = "; ".join(error_reasons) if error_reasons else None
 
@@ -47,6 +54,7 @@ def save_candidate_enrichment(
         ratings=ratings,
         mappings=mappings,
         now_ts=now_ts,
+        mdblist_attempted=mdblist_attempted,
     )
     mdblist_ok = 1 if md_item is not None else 0
     mdblist_miss = 1 if md_item is None else 0

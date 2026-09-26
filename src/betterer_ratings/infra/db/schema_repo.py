@@ -254,9 +254,45 @@ def _migration_002_queue_claim_indexes(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_003_enrichment_state(conn: sqlite3.Connection) -> None:
+    with conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS enrichment_state (
+                tmdb_id INTEGER NOT NULL,
+                media_type TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                payload TEXT,
+                fetched_at INTEGER,
+                next_due INTEGER NOT NULL,
+                PRIMARY KEY (tmdb_id, media_type, provider)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS imdb_episode_identity (
+                imdb_id TEXT PRIMARY KEY,
+                payload TEXT,
+                retryable INTEGER NOT NULL,
+                next_due INTEGER NOT NULL
+            )
+        """)
+        # Existing unsent work predates episode-level validation. Preserve rows
+        # and remote IDs; validated archive ingestion will requeue safe matches.
+        conn.execute("""
+            UPDATE episode_ratings SET pmdb_status='failed', pmdb_claimed_at=NULL,
+                pmdb_last_error='Episode identity verification required'
+            WHERE label='IM' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """)
+        conn.execute("""
+            UPDATE ratings SET pmdb_status='failed', pmdb_claimed_at=NULL,
+                pmdb_last_error='Trakt source verification required'
+            WHERE label='TR' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
+    (3, "enrichment_state", _migration_003_enrichment_state),
 )
 
 

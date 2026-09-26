@@ -13,7 +13,7 @@ def extract_tmdb_from_find_payload(
 ) -> Tuple[Optional[int], str, float]:
     result_key = "movie_results" if media_type == "movie" else "tv_results"
     result_items = payload.get(result_key)
-    if not isinstance(result_items, list):
+    if not isinstance(result_items, list) or len(result_items) != 1:
         return None, "", 0.0
     first_item = result_items[0] if result_items else None
     if not isinstance(first_item, dict):
@@ -46,6 +46,19 @@ def resolve_imdb_to_tmdb_local(
     normalized_imdb = normalize_imdb_title_id_fn(imdb_id)
     normalized_media = str(media_type or "").strip().lower()
     if not normalized_imdb or normalized_media not in {"movie", "tv"}:
+        return None
+
+    local_targets = db.conn.execute(
+        """
+        SELECT tmdb_id FROM mappings WHERE id_type='imdb' AND id_value=? AND media_type=?
+        UNION SELECT tmdb_id FROM titles WHERE imdb_id=? AND media_type=?
+        LIMIT 2
+        """,
+        (normalized_imdb, normalized_media, normalized_imdb, normalized_media),
+    ).fetchall()
+    if len(local_targets) > 1:
+        # Let the caller perform an exact remote lookup rather than selecting
+        # whichever conflicting local mapping happened to be refreshed last.
         return None
 
     mapping_row = db.conn.execute(

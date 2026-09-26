@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, List
 
 from betterer_ratings.services.harvest import cycle_discovery_phase as harvest_cycle_discovery_phase
 from betterer_ratings.services.harvest import cycle_mdblist_phase as harvest_cycle_mdblist_phase
-from betterer_ratings.services.harvest import cycle_precheck as harvest_cycle_precheck
 from betterer_ratings.services.harvest import cycle_tmdb_phase as harvest_cycle_tmdb_phase
 
 
@@ -30,16 +29,6 @@ async def run_cycle(
             mdblist_request_failures=0,
             interrupted=True,
         )
-
-    precheck_result = harvest_cycle_precheck.maybe_skip_title_enrichment(
-        harvester=self,
-        logger=logger,
-        now_epoch_fn=now_epoch_fn,
-        to_iso_fn=to_iso_fn,
-        harvest_cycle_result_cls=harvest_cycle_result_cls,
-    )
-    if precheck_result is not None:
-        return precheck_result
 
     local_stats: Dict[str, int]
     source_stats: Dict[str, Dict[str, int]]

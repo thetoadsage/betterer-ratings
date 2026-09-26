@@ -51,10 +51,47 @@ and submitter until the container stops.
 The harvester loop:
 
 - processes episode rating archives first
-- refreshes failed local titles, stale titles, and new local rows
+- selects local titles with due provider work, in batches of up to 1,000
 - runs configured catalog source scans on the configured interval
 - ingests archive-backed title candidates during source scans
 - enriches candidates and queues destination writes
+
+TMDB, MDBList, and optional MAL enrichment keep separate persistent refresh
+state. An MDBList quota pause defers MDBList requests until its reset while
+discovery, TMDB, IMDb archive ratings, and eligible MAL enrichment continue.
+Deferred MDBList requests do not advance its last-fetch timestamp. Successful
+title requests follow `worker.title_refresh_days`; missing MDBList items and
+unusable MAL results follow `worker.failed_retry_days` (minimum one minute).
+Failed TMDB requests retry after an hour. Other MDBList request failures retry
+after an hour, or five minutes after a halted batch when no quota reset is known.
+
+TMDB details are cached in SQLite for the title refresh interval, including the
+metadata needed to validate MAL matches. Having an IMDb mapping does not bypass
+metadata refresh. Expired metadata is retained for inspection but is not reused
+for enrichment after a failed refresh.
+
+IMDb title archive scores feed the `IM` queue directly for both new and existing
+mapped titles. The archive snapshot date, IMDb ID, and vote count are retained
+locally. Valid snapshots less than two days old take precedence over MDBList's
+IMDb score; stale snapshots do not enqueue archive title ratings.
+MDBList's combined score is never submitted as a Trakt rating.
+
+IMDb episode ratings require an unambiguous TMDB lookup of the **episode IMDb
+ID**, matching the parent show. Submissions use TMDB's returned season/episode
+coordinates. Unmapped episodes, specials, ambiguous results, and show mismatches
+are skipped; transient lookup failures retain the archive cursor for retry.
+Episode processing is limited to 1,000 archive rows per cycle. Identity matches
+are cached for seven days, misses for one day, and transient failures for five
+minutes. Existing published records are not automatically removed when numbering
+changes.
+
+On first startup after this update, an additive SQLite migration creates the
+provider/episode caches. Existing titles gradually populate the metadata cache.
+Unsent IMDb episode ratings and Trakt ratings from the old pipeline are held in
+`failed` status with a verification message until validated ingestion requeues
+them. This includes old in-flight rows recovered across an upgrade. Submitted
+records and their remote IDs are preserved; historical combined scores already
+published under Trakt require a separate audit.
 
 The submitter loop claims the oldest due mapping, title-rating, or
 episode-rating work across all queues and retries failed work after the
@@ -139,8 +176,9 @@ accuracy over coverage.
 A usable direct score replaces MDBList's `ML` score before the existing database
 and submission queue are updated. Missing scores, mismatches, and provider errors
 leave the MDBList fallback unchanged. Scores require at least one vote and are
-converted from 0–10 to 0–100. Refreshes follow `worker.title_refresh_days`; optional
-MAL failures do not fail the title or trigger an independent retry queue.
+converted from 0–10 to 0–100. Refreshes follow `worker.title_refresh_days`; unusable
+optional MAL results use the provider refresh state and `worker.failed_retry_days`
+without failing the title.
 
 Requests are paced at one per 1.1 seconds, with the existing HTTP retry and
 persisted service-pause handling. Each title's optional MAL fetch is bounded to

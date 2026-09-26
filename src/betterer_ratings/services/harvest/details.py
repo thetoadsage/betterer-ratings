@@ -13,6 +13,8 @@ async def fetch_tmdb_details(
     details_concurrency: int,
     now_epoch_fn: Callable[[], int],
     logger: Any,
+    refresh_seconds: int = 7 * 86400,
+    retry_seconds: int = 3600,
 ) -> Tuple[Dict[Tuple[str, int], Optional[Dict[str, Any]]], bool]:
     details: Dict[Tuple[str, int], Optional[Dict[str, Any]]] = {}
     progress_lock = asyncio.Lock()
@@ -38,34 +40,38 @@ async def fetch_tmdb_details(
 
             success = False
             try:
-                harvest_reason = str(getattr(candidate, "harvest_reason", "") or "").lower()
-                if harvest_reason in {"failed", "ttl"} and db.title_has_imdb_mapping(
-                    tmdb_id=candidate.tmdb_id,
-                    media_type=candidate.media_type,
-                ):
-                    details[(candidate.media_type, candidate.tmdb_id)] = {}
-                    success = True
+                key = (candidate.media_type, candidate.tmdb_id)
+                state = db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "tmdb")
+                fresh = state["fetched_at"] is not None and now_epoch_fn() - state["fetched_at"] < refresh_seconds
+                if fresh:
+                    details[key] = state["payload"]
+                    success = isinstance(details[key], dict)
+                elif state["next_due"] > now_epoch_fn():
+                    details[key] = None
                 else:
-                    response = await tmdb_client.fetch_details(
-                        candidate.media_type,
-                        candidate.tmdb_id,
+                    response = await tmdb_client.fetch_details(candidate.media_type, candidate.tmdb_id)
+                    success = response.ok and isinstance(response.data, dict) and bool(response.data)
+                    payload = response.data if success else None
+                    details[key] = payload
+                    now_ts = now_epoch_fn()
+                    db.save_enrichment_state(
+                        candidate.tmdb_id, candidate.media_type, "tmdb", payload=payload,
+                        now_ts=now_ts,
+                        # Keep successful metadata due until its ratings/mappings
+                        # are persisted. A stop between phases must not lose work.
+                        next_due=now_ts if success else now_ts + retry_seconds,
                     )
-                    key = (candidate.media_type, candidate.tmdb_id)
-                    if response.ok and isinstance(response.data, dict):
-                        details[key] = response.data
-                        success = True
-                    else:
-                        details[key] = None
-                        if logger is not None:
-                            logger.warning(
-                                "[TMDB] details failed for %s %s (%s): %s",
-                                candidate.media_type,
-                                candidate.tmdb_id,
-                                response.status,
-                                response.text[:240],
-                            )
+                    if not success and logger is not None:
+                        logger.warning(
+                            "[TMDB] details failed for %s %s (%s): %s",
+                            candidate.media_type, candidate.tmdb_id, response.status, response.text[:240],
+                        )
             except Exception as exc:
                 details[(candidate.media_type, candidate.tmdb_id)] = None
+                db.save_enrichment_state(
+                    candidate.tmdb_id, candidate.media_type, "tmdb", payload=None,
+                    now_ts=now_epoch_fn(), next_due=now_epoch_fn() + retry_seconds,
+                )
                 if logger is not None:
                     logger.warning(
                         "[TMDB] details failed for %s %s: %s",

@@ -102,6 +102,7 @@ class LocalDatabaseEnrichmentMixin:
         tmdb_vote_average: Optional[float],
         now_ts: int,
         error_message: Optional[str],
+        mdblist_attempted: bool = True,
     ) -> None:
         upsert_title(
             self.conn,
@@ -113,6 +114,7 @@ class LocalDatabaseEnrichmentMixin:
             tmdb_vote_average=tmdb_vote_average,
             now_ts=now_ts,
             error_message=error_message,
+            mdblist_attempted=mdblist_attempted,
             normalize_imdb_title_id_fn=normalize_imdb_title_id,
         )
 
@@ -194,6 +196,7 @@ class LocalDatabaseEnrichmentMixin:
         ratings: Dict[str, float],
         mappings: Dict[str, str],
         now_ts: int,
+        mdblist_attempted: bool = True,
     ) -> Tuple[int, int]:
         return save_enriched_item(
             self.conn,
@@ -207,6 +210,7 @@ class LocalDatabaseEnrichmentMixin:
             ratings=ratings,
             mappings=mappings,
             now_ts=now_ts,
+            mdblist_attempted=mdblist_attempted,
             supported_pmdb_mapping_types=SUPPORTED_PMDB_MAPPING_TYPES,
             clamp_0_100_fn=clamp_0_100,
             upsert_title_fn=self._upsert_title,

@@ -7,9 +7,11 @@ from betterer_ratings.infra.db import schema_repo as db_schema_repo
 from betterer_ratings.infra.db.local_database_enrichment_mixin import LocalDatabaseEnrichmentMixin
 from betterer_ratings.infra.db.local_database_queue_mixin import LocalDatabaseQueueMixin
 from betterer_ratings.infra.db.local_database_state_mixin import LocalDatabaseStateMixin
+from betterer_ratings.infra.db.provider_state import ProviderStateMixin
 
 
 class LocalDatabase(
+    ProviderStateMixin,
     LocalDatabaseStateMixin,
     LocalDatabaseEnrichmentMixin,
     LocalDatabaseQueueMixin,

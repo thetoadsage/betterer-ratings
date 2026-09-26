@@ -11,11 +11,6 @@ from betterer_ratings.services.harvest.discovery_tmdb_scan import scan_tmdb_sour
 from betterer_ratings.services.harvest.imdb_mapping_helpers import resolve_imdb_to_tmdb_local
 
 
-class _FakeDB:
-    def title_has_imdb_mapping(self, *, tmdb_id: int, media_type: str) -> bool:
-        return tmdb_id == 1 and media_type == "movie"
-
-
 class _FakeTMDB:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int]] = []
@@ -60,7 +55,8 @@ class _FakeSourceTMDB:
         return _FakeSourceResponse()
 
 
-def test_local_refresh_skips_tmdb_details_when_imdb_mapping_is_cached():
+def test_local_refresh_fetches_details_even_when_imdb_mapping_is_cached(local_db):
+    local_db._upsert_mapping(1, "movie", "imdb", "tt1234567", 100)
     tmdb = _FakeTMDB()
     candidates = [
         Candidate(1, "movie", "Cached", 0.0, harvest_reason="ttl"),
@@ -72,7 +68,7 @@ def test_local_refresh_skips_tmdb_details_when_imdb_mapping_is_cached():
             candidates=candidates,
             stop_event=asyncio.Event(),
             tmdb_client=tmdb,
-            db=_FakeDB(),
+            db=local_db,
             details_concurrency=2,
             now_epoch_fn=lambda: 1000,
             logger=None,
@@ -80,9 +76,9 @@ def test_local_refresh_skips_tmdb_details_when_imdb_mapping_is_cached():
     )
 
     assert interrupted is False
-    assert details[("movie", 1)] == {}
+    assert details[("movie", 1)] == {"external_ids": {"imdb_id": "tt1234567"}}
     assert details[("movie", 2)] == {"external_ids": {"imdb_id": "tt1234567"}}
-    assert tmdb.calls == [("movie", 2)]
+    assert tmdb.calls == [("movie", 1), ("movie", 2)]
 
 
 def test_source_scan_skips_existing_titles_from_memory_without_ttl_queries():

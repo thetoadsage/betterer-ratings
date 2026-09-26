@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from betterer_ratings.domain.models import Candidate
@@ -143,7 +144,10 @@ async def map_imdb_candidates_to_tmdb(
                     )
                     if local_candidate is not None:
                         async with lock:
-                            mapped.append(local_candidate)
+                            mapped.append(replace(
+                                local_candidate, archive_imdb_id=item.imdb_id,
+                                archive_rating=item.average_rating, archive_votes=item.num_votes,
+                            ))
                             mapped_count += 1
                             completed += 1
                         continue
@@ -169,6 +173,9 @@ async def map_imdb_candidates_to_tmdb(
                         title=title or f"TMDB-{tmdb_id}",
                         popularity=popularity,
                         harvest_reason="source",
+                        archive_imdb_id=item.imdb_id,
+                        archive_rating=item.average_rating,
+                        archive_votes=item.num_votes,
                     )
                     cache_updates.append(
                         (
