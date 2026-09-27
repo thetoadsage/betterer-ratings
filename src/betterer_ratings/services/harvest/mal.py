@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import unicodedata
+from dataclasses import dataclass
 from datetime import date as date_type
 from typing import Any
 
@@ -11,6 +12,15 @@ from betterer_ratings.core.mappings import extract_mappings
 from betterer_ratings.core.scoring import clamp_0_100
 
 LOGGER = logging.getLogger("betterer-ratings")
+
+
+@dataclass(frozen=True)
+class MALResult:
+    mal_id: int | None
+    provenance: str | None
+    validated: bool
+    outcome: str
+    score: float | None = None
 
 
 def _title(value: Any) -> str:
@@ -79,39 +89,50 @@ async def fetch_candidate_mal_score(
     *, client: Any, db: Any, candidate: Any, details: Any, md_item: Any,
     stop_event: asyncio.Event, anime_mapping_cache: Any | None = None,
     jikan: Any | None = None,
-) -> float | None:
+) -> MALResult:
     source = "official_mal"
+    identity_source: str | None = None
+    raw_id: Any = None
 
-    def outcome(reason: str, score: float | None = None) -> float | None:
+    def outcome(reason: str, score: float | None = None) -> MALResult:
         LOGGER.info(
             "[MAL] %s tmdb=%s/%s score=%s", reason, candidate.media_type,
             candidate.tmdb_id, score,
             extra={"event": "mal.enrichment", "outcome": reason, "source": source},
         )
-        return score
+        valid = reason in {"success", "missing_score"}
+        return MALResult(int(raw_id) if valid else None, identity_source, valid, reason, score)
 
     if stop_event.is_set():
-        return None
+        return outcome("stopped")
     mappings = extract_mappings(candidate.media_type, details, md_item)
     raw_id = mappings.get("mal")
+    if raw_id is not None:
+        identity_source = "source_mapping"
     if raw_id is None:
         raw_id = db.get_title_mapping(
             tmdb_id=candidate.tmdb_id, media_type=candidate.media_type, id_type="mal"
         )
+        if raw_id is not None:
+            identity_source = "stored_mapping"
     if raw_id is None and anime_mapping_cache is not None and (
         mappings.get("anilist") is not None or mappings.get("anidb") is not None
     ):
         raw_id = await anime_mapping_cache.resolve(mappings)
+        if raw_id is not None:
+            identity_source = "offline_bridge"
     if not isinstance(details, dict):
-        return outcome("missing_tmdb_details") if raw_id is not None else None
+        return outcome("missing_tmdb_details")
     if candidate.media_type == "tv" and (
         details.get("status") != "Ended" or details.get("number_of_seasons") != 1
     ):
-        return outcome("skipped_series_scope") if raw_id is not None else None
+        return outcome("skipped_series_scope")
     if raw_id is None and jikan is not None:
         raw_id = await jikan.resolve(candidate.media_type, details)
+        if raw_id is not None:
+            identity_source = "jikan_discovery"
     if raw_id is None or stop_event.is_set():
-        return None
+        return outcome("missing_mapping" if raw_id is None else "stopped")
     if not str(raw_id).isascii() or not str(raw_id).isdigit() or int(raw_id) <= 0:
         return outcome("invalid_mapping")
 

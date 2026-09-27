@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from betterer_ratings.services.harvest.mal import MALResult
+
 
 def save_candidate_enrichment(
     *,
@@ -10,7 +12,7 @@ def save_candidate_enrichment(
     details: Optional[Dict[str, Any]],
     md_item: Optional[Dict[str, Any]],
     now_ts: int,
-    mal_score: Optional[float] = None,
+    mal_result: MALResult | None = None,
     mdblist_attempted: bool = True,
     parse_mdblist_ratings_fn: Callable[[Optional[Dict[str, Any]]], Dict[str, float]],
     parse_tmdb_vote_average_fn: Callable[[Optional[Dict[str, Any]]], Optional[float]],
@@ -19,13 +21,16 @@ def save_candidate_enrichment(
     ],
 ) -> Tuple[int, int, int, int, int]:
     ratings = parse_mdblist_ratings_fn(md_item)
-    if mal_score is not None:
-        ratings["ML"] = mal_score
+    if mal_result is not None and mal_result.score is not None:
+        ratings["ML"] = mal_result.score
     tm_score = parse_tmdb_vote_average_fn(details)
     if tm_score is not None:
         ratings["TM"] = tm_score
 
     mappings = extract_mappings_fn(candidate.media_type, details, md_item)
+    mappings.pop("mal", None)
+    if mal_result is not None and mal_result.validated and mal_result.mal_id is not None:
+        mappings["mal"] = str(mal_result.mal_id)
     imdb_id = mappings.get("imdb")
     archive = db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "imdb")
     archive_data = archive["payload"]

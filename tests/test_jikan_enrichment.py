@@ -111,7 +111,7 @@ def test_discovery_and_score_precedence(local_db, tmp_path, status, expected, fa
             client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
             details=DETAILS, md_item={}, stop_event=asyncio.Event(), jikan=service,
         ))
-    assert score == expected
+    assert score.score == expected
     official.fetch_anime.assert_awaited_once_with(123)
     assert service.client.fetch_anime.await_count == fallback_calls
     assert any(getattr(r, "source", None) == ("jikan" if fallback_calls else "official_mal") for r in caplog.records)
@@ -127,7 +127,7 @@ def test_fallback_revalidates_details(local_db, tmp_path, anime):
     assert asyncio.run(fetch_candidate_mal_score(
         client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
         details=DETAILS, md_item={"ids": {"mal": 123}}, stop_event=asyncio.Event(), jikan=service,
-    )) is None
+    )).score is None
     service.client.search.assert_not_awaited()
 
 
@@ -137,7 +137,7 @@ def test_valid_official_mismatch_does_not_use_jikan(local_db, tmp_path):
     assert asyncio.run(fetch_candidate_mal_score(
         client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
         details=DETAILS, md_item={"ids": {"mal": 123}}, stop_event=asyncio.Event(), jikan=service,
-    )) is None
+    )).score is None
     service.client.fetch_anime.assert_not_awaited()
 
 
@@ -163,7 +163,7 @@ def test_tv_scope_checked_before_discovery(local_db, tmp_path, change):
     assert asyncio.run(fetch_candidate_mal_score(
         client=official, db=local_db, candidate=Candidate(1, "tv", "Example", 1),
         details={**DETAILS, **change}, md_item={}, stop_event=asyncio.Event(), jikan=service,
-    )) is None
+    )).score is None
     service.client.search.assert_not_awaited()
     official.fetch_anime.assert_not_awaited()
 
@@ -180,7 +180,7 @@ def test_fallback_can_be_disabled_independently(local_db, tmp_path):
     assert asyncio.run(fetch_candidate_mal_score(
         client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
         details=DETAILS, md_item={"ids": {"mal": 123}}, stop_event=asyncio.Event(), jikan=service,
-    )) is None
+    )).score is None
     service.client.fetch_anime.assert_not_awaited()
 
 
@@ -190,7 +190,7 @@ def test_official_timeout_uses_fallback(local_db, tmp_path):
     assert asyncio.run(fetch_candidate_mal_score(
         client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
         details=DETAILS, md_item={"ids": {"mal": 123}}, stop_event=asyncio.Event(), jikan=service,
-    )) == 80
+    )).score == 80
 
 
 def test_dashboard_includes_jikan_state(local_db):

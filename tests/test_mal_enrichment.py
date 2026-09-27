@@ -136,7 +136,7 @@ def test_fetch_outcomes_and_stored_mapping(local_db, status, data, expected):
     assert asyncio.run(fetch_candidate_mal_score(
         client=client, db=local_db, candidate=CANDIDATE, details=MOVIE,
         md_item=None, stop_event=asyncio.Event(),
-    )) == expected
+    )).score == expected
     client.fetch_anime.assert_awaited_once_with(164)
 
 
@@ -146,7 +146,7 @@ def test_missing_invalid_mapping_and_stop_do_not_fetch(local_db):
         assert asyncio.run(fetch_candidate_mal_score(
             client=client, db=local_db, candidate=CANDIDATE, details=MOVIE,
             md_item=item, stop_event=asyncio.Event(),
-        )) is None
+        )).score is None
     stop = asyncio.Event()
     stop.set()
     asyncio.run(fetch_candidate_mal_score(
@@ -163,7 +163,7 @@ def test_anilist_mapping_fallback_fetches_official_mal_score(local_db):
         client=client, db=local_db, candidate=CANDIDATE, details=MOVIE,
         md_item={"ids": {"anilist": 5114}}, stop_event=asyncio.Event(),
         anime_mapping_cache=cache,
-    )) == 86.7
+    )).score == 86.7
     cache.resolve.assert_awaited_once_with({"anilist": "5114"})
     client.fetch_anime.assert_awaited_once_with(164)
 
@@ -180,7 +180,7 @@ def test_timeout_falls_back_but_cancellation_propagates(local_db, error):
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(run())
     else:
-        assert asyncio.run(run()) is None
+        assert asyncio.run(run()).score is None
 
 
 @pytest.mark.parametrize("direct,expected", [(True, 86.7), (False, 70.0)])
@@ -277,3 +277,46 @@ def test_official_api_invalid_client_pauses(local_db, status):
         await client.aclose()
     asyncio.run(run())
     assert gate.pause_remaining() > 0
+
+
+def test_validated_offline_identity_queues_mapping_without_score(local_db):
+    cache = SimpleNamespace(resolve=AsyncMock(return_value="164"))
+    client = SimpleNamespace(fetch_anime=AsyncMock(return_value=APIResponse(
+        200, {}, {"data": {**ANIME, "score": None}}, ""
+    )))
+    result = asyncio.run(fetch_candidate_mal_score(
+        client=client, db=local_db, candidate=CANDIDATE, details=MOVIE,
+        md_item={"ids": {"anilist": 5114}}, stop_event=asyncio.Event(),
+        anime_mapping_cache=cache,
+    ))
+    assert (result.mal_id, result.provenance, result.validated, result.score) == (
+        164, "offline_bridge", True, None,
+    )
+    save_candidate_enrichment(
+        db=local_db, candidate=CANDIDATE, details=MOVIE,
+        md_item={"ids": {"anilist": 5114}}, now_ts=100,
+        mal_result=result, parse_mdblist_ratings_fn=parse_mdblist_ratings,
+        parse_tmdb_vote_average_fn=parse_tmdb_vote_average,
+        extract_mappings_fn=extract_mappings,
+    )
+    assert local_db.get_title_mapping(tmdb_id=128, media_type="movie", id_type="mal") == "164"
+    assert local_db.conn.execute("SELECT count(*) FROM ratings WHERE label='ML'").fetchone()[0] == 0
+
+
+def test_mismatched_title_does_not_queue_mal_mapping(local_db):
+    client = SimpleNamespace(fetch_anime=AsyncMock(return_value=APIResponse(
+        200, {}, {"data": {**ANIME, "title": "Other", "title_english": "Other"}}, ""
+    )))
+    result = asyncio.run(fetch_candidate_mal_score(
+        client=client, db=local_db, candidate=CANDIDATE, details=MOVIE,
+        md_item={"ids": {"mal": 164}}, stop_event=asyncio.Event(),
+    ))
+    assert not result.validated
+    save_candidate_enrichment(
+        db=local_db, candidate=CANDIDATE, details=MOVIE,
+        md_item={"ids": {"mal": 164}}, now_ts=100,
+        mal_result=result, parse_mdblist_ratings_fn=parse_mdblist_ratings,
+        parse_tmdb_vote_average_fn=parse_tmdb_vote_average,
+        extract_mappings_fn=extract_mappings,
+    )
+    assert local_db.get_title_mapping(tmdb_id=128, media_type="movie", id_type="mal") is None

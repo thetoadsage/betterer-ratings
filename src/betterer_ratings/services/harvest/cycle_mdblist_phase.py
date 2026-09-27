@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple
 
 from betterer_ratings.core.mappings import extract_mappings
 from betterer_ratings.services.harvest.discovery_local import mdblist_daily_quota_pause_until
-from betterer_ratings.services.harvest.mal import fetch_candidate_mal_score
+from betterer_ratings.services.harvest.mal import MALResult, fetch_candidate_mal_score
 
 
 async def run_mdblist_enrichment_phase(
@@ -41,7 +41,7 @@ async def run_mdblist_enrichment_phase(
         md_state = self.db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "mdblist")
         # Retain IDs for MAL discovery, but do not replay stale MDBList ratings.
         mal_item = md_item if md_item is not None else md_state["payload"]
-        direct_score = None
+        mal_result = MALResult(None, None, False, "not_attempted")
         mal_update = None
         if getattr(self, "mal_client", None) is not None:
             state = self.db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "mal")
@@ -52,7 +52,7 @@ async def run_mdblist_enrichment_phase(
             ).encode()).hexdigest()
             cached = state["payload"] or {}
             if state["next_due"] <= now_ts or cached.get("context") != context:
-                direct_score = await fetch_candidate_mal_score(
+                mal_result = await fetch_candidate_mal_score(
                     client=self.mal_client, db=self.db, candidate=candidate,
                     details=details, md_item=mal_item, stop_event=stop_event,
                     anime_mapping_cache=getattr(self, "anime_mapping_cache", None),
@@ -60,12 +60,21 @@ async def run_mdblist_enrichment_phase(
                 )
                 if stop_event.is_set():
                     return
-                mal_update = {"score": direct_score, "context": context}
+                if mal_result.validated and mal_result.mal_id is not None:
+                    context = hashlib.sha256(json.dumps(
+                        [details, extract_mappings(candidate.media_type, details, mal_item),
+                         str(mal_result.mal_id)], sort_keys=True,
+                    ).encode()).hexdigest()
+                mal_update = {"result": vars(mal_result), "context": context}
             else:
-                direct_score = cached.get("score")
+                data = cached.get("result")
+                if isinstance(data, dict):
+                    mal_result = MALResult(**data)
+                elif cached.get("score") is not None:
+                    mal_result = MALResult(None, None, False, "legacy_score", cached["score"])
         _, _, _, queued_r, queued_m = self._save_candidate_enrichment(
             candidate=candidate, details=details, md_item=md_item, now_ts=now_ts,
-            mal_score=direct_score, mdblist_attempted=attempted,
+            mal_result=mal_result, mdblist_attempted=attempted,
         )
         queue_ratings += queued_r
         queue_mappings += queued_m
@@ -78,7 +87,7 @@ async def run_mdblist_enrichment_phase(
         if mal_update is not None:
             self.db.save_enrichment_state(
                 candidate.tmdb_id, candidate.media_type, "mal", payload=mal_update, now_ts=now_ts,
-                next_due=now_ts + (ttl if direct_score is not None else missing_retry),
+                next_due=now_ts + (ttl if mal_result.validated else missing_retry),
             )
         if attempted:
             self.db.save_enrichment_state(
