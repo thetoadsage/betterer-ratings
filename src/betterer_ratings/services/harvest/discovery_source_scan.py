@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from betterer_ratings.core.clock import now_epoch as core_now_epoch
@@ -9,6 +10,7 @@ from betterer_ratings.core.parsing import parse_int as core_parse_int
 from betterer_ratings.domain.models import Candidate
 from betterer_ratings.services.harvest import discovery_imdb_scan as harvest_discovery_imdb_scan
 from betterer_ratings.services.harvest import discovery_tmdb_scan as harvest_discovery_tmdb_scan
+from betterer_ratings.services.harvest.discovery_tmdb_exports import scan_daily_exports
 
 
 async def collect_source_candidates(
@@ -30,6 +32,9 @@ async def collect_source_candidates(
     now_epoch_fn: Callable[[], int] = core_now_epoch,
     logger: Any = None,
     candidate_cls: Any = Candidate,
+    daily_exports_config: Any = None,
+    daily_exports_directory: Path | None = None,
+    export_pending_callback: Callable[[dict[str, tuple[str, int]]], None] | None = None,
 ) -> Tuple[List[Candidate], Dict[str, Dict[str, int]], bool]:
     candidates: List[Candidate] = []
     seen: Set[Tuple[str, int]] = set()
@@ -92,6 +97,21 @@ async def collect_source_candidates(
         raw_seen_total=raw_seen_total,
     )
     interrupted = tmdb_interrupted
+
+    if not interrupted and daily_exports_config is not None and daily_exports_directory is not None:
+        pending = await scan_daily_exports(
+            db=db,
+            config=daily_exports_config,
+            directory=daily_exports_directory,
+            candidates=candidates,
+            seen=seen,
+            stop_event=stop_event,
+            logger=logger,
+            now_ts=now_ts,
+        )
+        if export_pending_callback is not None:
+            export_pending_callback(pending)
+        interrupted = stop_event.is_set()
 
     if (
         not interrupted

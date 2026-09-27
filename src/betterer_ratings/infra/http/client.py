@@ -85,12 +85,14 @@ class HTTPClient:
         json_body: Optional[Dict[str, Any]] = None,
         gate: Optional[Any] = None,
         max_pause_wait_seconds: Optional[int] = None,
+        max_attempts: Optional[int] = None,
     ) -> APIResponse:
         last_response: Optional[APIResponse] = None
         safe_url = self._sanitize_url_for_logs(url)
         consecutive_pool_errors = 0
+        attempt_limit = self.max_retries if max_attempts is None else max(1, min(self.max_retries, max_attempts))
 
-        for attempt in range(self.max_retries):
+        for attempt in range(attempt_limit):
             if gate is not None:
                 acquired = await gate.acquire(max_pause_wait_seconds=max_pause_wait_seconds)
                 if not acquired:
@@ -122,7 +124,7 @@ class HTTPClient:
                     consecutive_pool_errors + 1 if recyclable_pool_error else 0
                 )
                 pool_recycled = False
-                if consecutive_pool_errors >= 2 and attempt < self.max_retries - 1:
+                if consecutive_pool_errors >= 2 and attempt < attempt_limit - 1:
                     pool_recycled = await self._recycle_client(client)
                     consecutive_pool_errors = 0
                     if pool_recycled:
@@ -155,7 +157,7 @@ class HTTPClient:
                             method,
                             safe_url,
                             attempt + 1,
-                            self.max_retries,
+                            attempt_limit,
                             sleep_for,
                             error_type,
                             error_repr,
@@ -164,7 +166,7 @@ class HTTPClient:
                                 "method": method,
                                 "endpoint": safe_url,
                                 "attempt": attempt + 1,
-                                "max_attempts": self.max_retries,
+                                "max_attempts": attempt_limit,
                                 "backoff_seconds": sleep_for,
                                 "error_type": error_type,
                                 "error_repr": error_repr,
@@ -178,7 +180,7 @@ class HTTPClient:
                         method,
                         safe_url,
                         attempt + 1,
-                        self.max_retries,
+                        attempt_limit,
                         error_type,
                         error_repr,
                         extra={
@@ -186,14 +188,14 @@ class HTTPClient:
                             "method": method,
                             "endpoint": safe_url,
                             "attempt": attempt + 1,
-                            "max_attempts": self.max_retries,
+                            "max_attempts": attempt_limit,
                             "error_type": error_type,
                             "error_repr": error_repr,
                             "pool_recycled": pool_recycled,
                         },
                     )
 
-                if attempt == self.max_retries - 1:
+                if attempt == attempt_limit - 1:
                     return APIResponse(
                         status=0,
                         headers={},
@@ -235,7 +237,7 @@ class HTTPClient:
                     safe_url,
                     format_duration(retry_after),
                 )
-                if attempt == self.max_retries - 1:
+                if attempt == attempt_limit - 1:
                     return response
                 await asyncio.sleep(retry_after)
                 continue
@@ -249,9 +251,9 @@ class HTTPClient:
                     safe_url,
                     sleep_for,
                     attempt + 1,
-                    self.max_retries,
+                    attempt_limit,
                 )
-                if attempt == self.max_retries - 1:
+                if attempt == attempt_limit - 1:
                     return response
                 await asyncio.sleep(sleep_for)
                 continue

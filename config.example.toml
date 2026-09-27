@@ -14,6 +14,14 @@ failed_retry_days = 7
 language = "en-US"
 rate_limit = { requests = 45, per_seconds = 1.0 }
 
+# Optional systematic backlog beyond popular lists and IMDb's vote threshold.
+# At most 25 new titles per source scan and 100 per UTC day receive detail work.
+# The downloaded ID exports are cached under /data/temp until their cursors finish.
+[tmdb.daily_exports]
+enabled = true
+max_new_titles_per_scan = 25
+daily_detail_budget = 100
+
 [[tmdb.sources]]
 name = "movie/popular"
 max_pages = 500

@@ -49,7 +49,12 @@ async def fetch_tmdb_details(
                 elif state["next_due"] > now_epoch_fn():
                     details[key] = None
                 else:
-                    response = await tmdb_client.fetch_details(candidate.media_type, candidate.tmdb_id)
+                    if candidate.harvest_reason == "daily_export":
+                        response = await tmdb_client.fetch_details(
+                            candidate.media_type, candidate.tmdb_id, single_attempt=True
+                        )
+                    else:
+                        response = await tmdb_client.fetch_details(candidate.media_type, candidate.tmdb_id)
                     success = response.ok and isinstance(response.data, dict) and bool(response.data)
                     payload = response.data if success else None
                     details[key] = payload

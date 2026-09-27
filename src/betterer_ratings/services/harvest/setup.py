@@ -40,6 +40,9 @@ def configure_harvester(
     self.details_concurrency = config.tmdb.details_concurrency
 
     self.tmdb_sources = [tmdb_client.build_source(source) for source in config.tmdb.sources]
+    self.tmdb_daily_exports = config.tmdb.daily_exports
+    self.tmdb_export_directory = Path(config.runtime.temp_path).expanduser() / "tmdb_exports"
+    self._pending_tmdb_export_cursors = {}
     imdb_path = Path(config.runtime.imdb_archive_path).expanduser()
     imdb_path.mkdir(parents=True, exist_ok=True)
     self.imdb_cache = imdb_tmdb_cache_cls(imdb_path / "imdb_tmdb_cache.sqlite3")

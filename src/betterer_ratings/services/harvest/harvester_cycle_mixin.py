@@ -101,6 +101,9 @@ class HarvesterCycleMixin:
             now_epoch_fn=now_epoch,
             logger=LOGGER,
             candidate_cls=Candidate,
+            daily_exports_config=self.tmdb_daily_exports,
+            daily_exports_directory=self.tmdb_export_directory,
+            export_pending_callback=lambda pending: setattr(self, "_pending_tmdb_export_cursors", pending),
         )
 
     async def _fetch_tmdb_details(

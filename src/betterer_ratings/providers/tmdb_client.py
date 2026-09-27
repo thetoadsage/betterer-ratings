@@ -50,7 +50,7 @@ class TMDBClient:
             gate=self.gate,
         )
 
-    async def fetch_details(self, media_type: str, tmdb_id: int) -> APIResponse:
+    async def fetch_details(self, media_type: str, tmdb_id: int, *, single_attempt: bool = False) -> APIResponse:
         endpoint_media = "movie" if media_type == "movie" else "tv"
         url = f"{self.base_url}/{endpoint_media}/{tmdb_id}"
         return await self.http.request_json(
@@ -62,6 +62,7 @@ class TMDBClient:
                 "append_to_response": "external_ids",
             },
             gate=self.gate,
+            max_attempts=1 if single_attempt else None,
         )
 
     async def fetch_find_by_imdb(self, imdb_id: str) -> APIResponse:

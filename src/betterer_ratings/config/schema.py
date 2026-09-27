@@ -197,10 +197,30 @@ class TMDBSourceConfig:
 
 
 @dataclass(frozen=True)
+class TMDBDailyExportsConfig:
+    enabled: bool = False
+    max_new_titles_per_scan: int = 25
+    daily_detail_budget: int = 100
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "TMDBDailyExportsConfig":
+        _reject_unknown_keys(value, allowed={"enabled", "max_new_titles_per_scan", "daily_detail_budget"}, path="tmdb.daily_exports")
+        enabled = value.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigValidationError("tmdb.daily_exports.enabled must be a boolean")
+        per_scan = _as_int(value.get("max_new_titles_per_scan", 25), path="tmdb.daily_exports.max_new_titles_per_scan")
+        per_day = _as_int(value.get("daily_detail_budget", 100), path="tmdb.daily_exports.daily_detail_budget")
+        if per_scan < 1 or per_day < 1:
+            raise ConfigValidationError("TMDB daily export budgets must be positive")
+        return TMDBDailyExportsConfig(enabled, per_scan, per_day)
+
+
+@dataclass(frozen=True)
 class TMDBConfig:
     language: str
     rate_limit: RateLimitConfig
     sources: tuple[TMDBSourceConfig, ...]
+    daily_exports: TMDBDailyExportsConfig = TMDBDailyExportsConfig()
 
     @property
     def base_url(self) -> str:
@@ -220,7 +240,7 @@ class TMDBConfig:
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "TMDBConfig":
-        _reject_unknown_keys(value, allowed={"language", "rate_limit", "sources"}, path="tmdb")
+        _reject_unknown_keys(value, allowed={"language", "rate_limit", "sources", "daily_exports"}, path="tmdb")
         sources_raw = _require_list(value.get("sources"), path="tmdb.sources")
         if not sources_raw:
             raise ConfigValidationError("tmdb.sources must be a non-empty array")
@@ -237,6 +257,9 @@ class TMDBConfig:
                 path="tmdb.rate_limit",
             ),
             sources=sources,
+            daily_exports=TMDBDailyExportsConfig.from_mapping(
+                _require_mapping(value.get("daily_exports", {}), path="tmdb.daily_exports")
+            ),
         )
 
 

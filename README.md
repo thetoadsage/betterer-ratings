@@ -122,6 +122,7 @@ Use `config.example.toml` as the schema reference. Public configuration covers:
 - source scan interval
 - title and episode refresh windows
 - source lists
+- optional TMDB daily ID export backlog and detail request budgets
 - archive filters
 - provider rate limits
 - ratings batch size
@@ -129,6 +130,15 @@ Use `config.example.toml` as the schema reference. Public configuration covers:
 Runtime internals such as container database paths, archive paths, submitter
 worker count, retry counts, and provider timeouts are intentionally fixed in
 the application.
+
+Set `tmdb.daily_exports.enabled = true` to scan TMDB's movie and TV ID exports
+after the configured list sources. The exports provide IDs and filtering fields;
+each new title still needs a TMDB detail request. `max_new_titles_per_scan`
+limits the new candidates selected each source scan, and
+`daily_detail_budget` caps those selections per UTC day. The worker caches
+decompressed exports under `/data/temp/tmdb_exports`, pins each snapshot until
+its cursor reaches the end, and commits cursor progress after enrichment finishes.
+Existing configurations without this table keep the export backlog disabled.
 
 Default behavior:
 
