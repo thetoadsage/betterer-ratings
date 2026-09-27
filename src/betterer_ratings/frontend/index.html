@@ -671,6 +671,7 @@ function renderStats() {
   const today = s.day || new Date().toISOString().slice(0,10);
   const dailyTitles = state.titlesDaily?.daily_titles || [];
   const titleDay = dailyTitles.find(d=>d.day_key === today);
+  const contributedDay = (state.metricsHistory?.contributed_daily || []).find(d=>d.date === today);
 
   const pendingTotal = (q.ratings_pending||0)+(q.episode_ratings_pending||0)+(q.mappings_pending||0);
   const inFlightTotal = (q.ratings_in_flight||0)+(q.episode_ratings_in_flight||0)+(q.mappings_in_flight||0);
@@ -680,6 +681,7 @@ function renderStats() {
     {label:'Titles Today',value:fmt(titleDay?.title_count||0),total:fmt(s.titles_total),totalLabel:'total titles',cls:'stat-titles'},
     {label:'Ratings Today',value:fmt(s.ratings_today),total:fmt(s.ratings_total),totalLabel:'total ratings',cls:'stat-ratings'},
     {label:'Mappings Today',value:fmt(s.mappings_today),total:fmt(s.mappings_total),totalLabel:'total mappings',cls:'stat-mappings'},
+    {label:'New Fields Today',value:fmt((contributedDay?.ratings||0)+(contributedDay?.mappings||0)),total:fmt(contributedDay?.ratings||0)+' ratings · '+fmt(contributedDay?.mappings||0)+' mappings',totalLabel:'first contributions',cls:'stat-ratings'},
     {label:'Episodes Today',value:fmt(s.episode_ratings_today),total:fmt(s.episode_ratings_total),totalLabel:'total episodes',cls:'stat-episodes'},
     {label:'Queue Pending',value:fmt(pendingTotal),total:fmt(inFlightTotal),totalLabel:'in-flight now',cls:'stat-pending'},
     {label:'Queue Failed',value:fmt(failedTotal),total:fmt(pendingTotal),totalLabel:'pending backlog',cls:'stat-failed'},

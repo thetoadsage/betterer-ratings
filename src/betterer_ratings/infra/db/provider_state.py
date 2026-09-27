@@ -41,9 +41,42 @@ class ProviderStateMixin:
     def select_provider_due_titles(
         self, *, now_ts: int, mdblist_pause_until: int, mal_enabled: bool, limit: int = 1000,
     ) -> list[sqlite3.Row]:
-        return self.conn.execute("""
+        safe_limit = max(0, int(limit))
+        if safe_limit == 0:
+            return []
+        rows = self.conn.execute("""
             SELECT t.*, CASE WHEN t.last_harvested_at IS NULL THEN 'new' ELSE 'ttl' END
-                AS harvest_reason
+                AS harvest_reason,
+                (SELECT COUNT(*) FROM coverage_gaps g
+                 WHERE g.tmdb_id=t.tmdb_id AND g.media_type=t.media_type
+                   AND g.outcome='no_data'
+                   AND ((g.kind='rating' AND NOT EXISTS (
+                       SELECT 1 FROM ratings r WHERE r.tmdb_id=g.tmdb_id
+                           AND r.media_type=g.media_type AND r.label=g.field
+                   )) OR (g.kind='mapping' AND NOT EXISTS (
+                       SELECT 1 FROM mappings m WHERE m.tmdb_id=g.tmdb_id
+                           AND m.media_type=g.media_type AND m.id_type=g.field
+                   )))) AS missing_fields,
+                (SELECT COUNT(*) FROM coverage_gaps g
+                 WHERE g.tmdb_id=t.tmdb_id AND g.media_type=t.media_type
+                   AND g.outcome='provider_unavailable'
+                   AND ((g.kind='rating' AND NOT EXISTS (
+                       SELECT 1 FROM ratings r WHERE r.tmdb_id=g.tmdb_id
+                           AND r.media_type=g.media_type AND r.label=g.field
+                   )) OR (g.kind='mapping' AND NOT EXISTS (
+                       SELECT 1 FROM mappings m WHERE m.tmdb_id=g.tmdb_id
+                           AND m.media_type=g.media_type AND m.id_type=g.field
+                   )))) AS unavailable_fields,
+                (SELECT COUNT(*) FROM coverage_gaps g
+                 WHERE g.tmdb_id=t.tmdb_id AND g.media_type=t.media_type
+                   AND g.outcome='ambiguous_identity'
+                   AND ((g.kind='rating' AND NOT EXISTS (
+                       SELECT 1 FROM ratings r WHERE r.tmdb_id=g.tmdb_id
+                           AND r.media_type=g.media_type AND r.label=g.field
+                   )) OR (g.kind='mapping' AND NOT EXISTS (
+                       SELECT 1 FROM mappings m WHERE m.tmdb_id=g.tmdb_id
+                           AND m.media_type=g.media_type AND m.id_type=g.field
+                   )))) AS ambiguous_fields
             FROM titles t
             LEFT JOIN enrichment_state tm ON tm.tmdb_id=t.tmdb_id
                 AND tm.media_type=t.media_type AND tm.provider='tmdb'
@@ -54,9 +87,18 @@ class ProviderStateMixin:
             WHERE COALESCE(tm.next_due, 0)<=?
                 OR (?<=? AND COALESCE(md.next_due, 0)<=?)
                 OR (? AND COALESCE(ml.next_due, 0)<=?)
-            ORDER BY COALESCE(t.last_harvested_at, 0), t.media_type, t.tmdb_id
-            LIMIT ?
-        """, (now_ts, mdblist_pause_until, now_ts, now_ts, mal_enabled, now_ts, limit)).fetchall()
+            ORDER BY (missing_fields + unavailable_fields + ambiguous_fields) DESC,
+                COALESCE(t.last_harvested_at, 0), t.media_type, t.tmdb_id
+        """, (now_ts, mdblist_pause_until, now_ts, now_ts, mal_enabled, now_ts)).fetchall()
+        first = [row for row in rows if row["last_harvested_at"] is None]
+        refresh = [row for row in rows if row["last_harvested_at"] is not None]
+        reserved = max(1, (safe_limit + 3) // 4) if first else 0
+        selected = first[:reserved] + refresh[:safe_limit - reserved]
+        if len(selected) < safe_limit:
+            selected += first[reserved:reserved + safe_limit - len(selected)]
+        if len(selected) < safe_limit:
+            selected += refresh[safe_limit - reserved:safe_limit - reserved + safe_limit - len(selected)]
+        return selected
 
     def save_archive_title_rating(self, candidate: Candidate, *, source_at: int, now_ts: int) -> bool:
         from betterer_ratings.core.scoring import score_to_tenths

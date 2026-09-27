@@ -33,8 +33,12 @@ class JikanEnrichment:
         self._lock = asyncio.Lock()
 
     async def resolve(self, media_type: str, details: dict[str, Any]) -> int | None:
+        value, _ = await self.resolve_decision(media_type, details)
+        return value
+
+    async def resolve_decision(self, media_type: str, details: dict[str, Any]) -> tuple[int | None, str]:
         if not self.config.discover_missing or not likely_anime(details):
-            return None
+            return None, "ineligible"
         # Include matching metadata, endpoint and policy version to invalidate stale decisions.
         key = hashlib.sha256(json.dumps(
             [1, self.client.base_url, self.config.max_search_pages, media_type, {
@@ -54,7 +58,7 @@ class JikanEnrichment:
                     value = cached.get("mal_id")
                     if value is None or (type(value) is int and value > 0):
                         self._log("cache_" + str(cached.get("outcome", "hit")), value)
-                        return value
+                        return value, str(cached.get("outcome", "matched"))
             except (OSError, ValueError, KeyError, TypeError):
                 pass
             try:
@@ -73,7 +77,7 @@ class JikanEnrichment:
                 os.replace(temporary, path)
             except OSError:
                 LOGGER.warning("Jikan discovery cache could not be written")
-            return value
+            return value, outcome
 
     @staticmethod
     def _log(outcome: str, mal_id: int | None) -> None:

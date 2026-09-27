@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from betterer_ratings.infra.db.coverage_repo import update_coverage_gaps
 from betterer_ratings.services.harvest.mal import MALResult
 
 
@@ -60,6 +61,27 @@ def save_candidate_enrichment(
         mappings=mappings,
         now_ts=now_ts,
         mdblist_attempted=mdblist_attempted,
+    )
+    expected: dict[tuple[str, str], str] = {}
+    expected[("rating", "TM")] = "no_data" if details is not None else "provider_unavailable"
+    if imdb_id:
+        expected[("rating", "IM")] = (
+            "no_data" if mdblist_attempted else "provider_unavailable"
+        )
+        expected[("mapping", "imdb")] = "no_data"
+    if mal_result is not None and mal_result.outcome != "not_attempted":
+        if mal_result.outcome == "ambiguous_identity":
+            missing_reason = "ambiguous_identity"
+        elif mal_result.outcome in {"provider_failure", "provider_unavailable", "timeout"}:
+            missing_reason = "provider_unavailable"
+        else:
+            missing_reason = "no_data"
+        if mal_result.provenance is not None or mal_result.outcome == "ambiguous_identity":
+            expected[("rating", "ML")] = missing_reason
+            expected[("mapping", "mal")] = missing_reason
+    update_coverage_gaps(
+        db.conn, tmdb_id=candidate.tmdb_id, media_type=candidate.media_type,
+        expected=expected, now_ts=now_ts,
     )
     mdblist_ok = 1 if md_item is not None else 0
     mdblist_miss = 1 if md_item is None else 0

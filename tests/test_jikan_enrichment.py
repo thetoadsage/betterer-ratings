@@ -215,3 +215,16 @@ def test_get_only_provider_requests():
             assert detail.calls[0].request.content == b""
         await client.aclose()
     asyncio.run(run())
+
+
+def test_ambiguous_discovery_reports_identity_outcome_without_fetch(local_db, tmp_path):
+    service = enrichment(tmp_path, [page([ANIME, {**ANIME, "mal_id": 456, "score": None}])])
+    official = SimpleNamespace(fetch_anime=AsyncMock())
+    result = asyncio.run(fetch_candidate_mal_score(
+        client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
+        details=DETAILS, md_item={}, stop_event=asyncio.Event(), jikan=service,
+    ))
+    assert result.outcome == "ambiguous_identity"
+    assert result.provenance == "jikan_discovery"
+    assert not result.validated
+    official.fetch_anime.assert_not_awaited()

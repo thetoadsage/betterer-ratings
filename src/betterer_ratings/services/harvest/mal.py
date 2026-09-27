@@ -128,11 +128,24 @@ async def fetch_candidate_mal_score(
     ):
         return outcome("skipped_series_scope")
     if raw_id is None and jikan is not None:
-        raw_id = await jikan.resolve(candidate.media_type, details)
-        if raw_id is not None:
+        if hasattr(jikan, "resolve_decision"):
+            raw_id, discovery_outcome = await jikan.resolve_decision(candidate.media_type, details)
+        else:
+            raw_id = await jikan.resolve(candidate.media_type, details)
+            discovery_outcome = "no_match"
+        if discovery_outcome != "ineligible":
             identity_source = "jikan_discovery"
     if raw_id is None or stop_event.is_set():
-        return outcome("missing_mapping" if raw_id is None else "stopped")
+        if stop_event.is_set():
+            return outcome("stopped")
+        if jikan is not None and discovery_outcome == "ambiguous":
+            return outcome("ambiguous_identity")
+        if jikan is not None and discovery_outcome in {
+            "provider_failure", "timeout", "incomplete_search", "invalid_response",
+            "invalid_pagination", "repeated_page",
+        }:
+            return outcome("provider_unavailable")
+        return outcome("missing_mapping")
     if not str(raw_id).isascii() or not str(raw_id).isdigit() or int(raw_id) <= 0:
         return outcome("invalid_mapping")
 

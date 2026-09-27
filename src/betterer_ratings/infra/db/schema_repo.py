@@ -289,10 +289,32 @@ def _migration_003_enrichment_state(conn: sqlite3.Connection) -> None:
         """)
 
 
+def _migration_004_coverage_gaps(conn: sqlite3.Connection) -> None:
+    with conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS coverage_gaps (
+                tmdb_id INTEGER NOT NULL,
+                media_type TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                field TEXT NOT NULL,
+                outcome TEXT NOT NULL CHECK(outcome IN (
+                    'provider_unavailable', 'no_data', 'ambiguous_identity'
+                )),
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (tmdb_id, media_type, kind, field)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_coverage_gaps_title
+            ON coverage_gaps (media_type, tmdb_id, outcome)
+        """)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
     (3, "enrichment_state", _migration_003_enrichment_state),
+    (4, "coverage_gaps", _migration_004_coverage_gaps),
 )
 
 

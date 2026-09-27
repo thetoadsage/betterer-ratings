@@ -339,3 +339,78 @@ def test_ambiguous_local_imdb_mapping_requires_remote_resolution(local_db):
     assert extract_tmdb_from_find_payload(
         payload={"movie_results": [{"id": 10}, {"id": 20}]}, media_type="movie", parse_int_fn=parse_int,
     )[0] is None
+
+
+def test_provider_schedule_reserves_first_enrichment_and_prefers_coverage(local_db):
+    for tmdb_id in range(1, 9):
+        local_db.conn.execute("""
+            INSERT INTO titles(tmdb_id, media_type, title, popularity, last_seen_at, last_harvested_at)
+            VALUES (?, 'movie', ?, 1, 100, 100)
+        """, (tmdb_id, str(tmdb_id)))
+    for tmdb_id in (9, 10):
+        local_db.conn.execute("""
+            INSERT INTO titles(tmdb_id, media_type, title, popularity, last_seen_at)
+            VALUES (?, 'movie', ?, 1, 100)
+        """, (tmdb_id, str(tmdb_id)))
+    local_db.conn.execute("""
+        INSERT INTO coverage_gaps VALUES (8, 'movie', 'rating', 'ML', 'no_data', 100)
+    """)
+    rows = local_db.select_provider_due_titles(
+        now_ts=200, mdblist_pause_until=0, mal_enabled=True, limit=4,
+    )
+    ids = [row["tmdb_id"] for row in rows]
+    assert len(ids) == 4
+    assert 9 in ids or 10 in ids
+    assert 8 in ids
+    assert rows[0]["tmdb_id"] in (9, 10)
+
+
+def test_coverage_outcome_and_new_field_metrics_ignore_refreshes(local_db):
+    from betterer_ratings.api_server import handle_coverage_gaps, handle_metrics_history
+    from betterer_ratings.core.clock import local_day_key
+    from betterer_ratings.services.harvest.mal import MALResult
+
+    unavailable = MALResult(164, "source_mapping", False, "provider_failure")
+    kwargs = dict(candidate=TITLE, details=DETAILS, md_item=None, now_ts=100,
+                  mdblist_attempted=False, mal_result=unavailable)
+    save(local_db, **kwargs)
+    gaps = local_db.conn.execute(
+        "SELECT kind, field, outcome FROM coverage_gaps ORDER BY kind, field"
+    ).fetchall()
+    assert ("rating", "ML", "provider_unavailable") in [tuple(row) for row in gaps]
+    assert ("rating", "IM", "provider_unavailable") in [tuple(row) for row in gaps]
+    save(local_db, **kwargs)
+    app = {"db": local_db}
+    history = asyncio.run(handle_metrics_history(SimpleNamespace(app=app)))
+    import json
+    body = json.loads(history.text)
+    day = next(item for item in body["contributed_daily"]
+               if item["date"] == local_day_key(100))
+    assert day["ratings"] == 1  # TM only; later refresh is not new coverage.
+    assert day["mappings"] == 2  # IMDb and TVDB.
+    coverage = json.loads(asyncio.run(handle_coverage_gaps(SimpleNamespace(app=app))).text)
+    assert any(item["field"] == "ML" and item["outcome"] == "provider_unavailable"
+               for item in coverage["missing"])
+
+
+def test_coverage_distinguishes_no_data_from_ambiguous_identity(local_db):
+    from betterer_ratings.services.harvest.mal import MALResult
+
+    scoreless = MALResult(164, "offline_bridge", True, "missing_score")
+    save(local_db, candidate=TITLE, details=DETAILS, md_item=None,
+         now_ts=100, mal_result=scoreless)
+    rows = [tuple(row) for row in local_db.conn.execute(
+        "SELECT kind, field, outcome FROM coverage_gaps"
+    )]
+    assert ("rating", "ML", "no_data") in rows
+    assert not any(kind == "mapping" and field == "mal" for kind, field, _ in rows)
+
+    other = replace(TITLE, tmdb_id=11)
+    ambiguous = MALResult(None, "jikan_discovery", False, "ambiguous_identity")
+    save(local_db, candidate=other, details=DETAILS, md_item=None,
+         now_ts=100, mal_result=ambiguous)
+    rows = [tuple(row) for row in local_db.conn.execute(
+        "SELECT kind, field, outcome FROM coverage_gaps WHERE tmdb_id=11"
+    )]
+    assert ("rating", "ML", "ambiguous_identity") in rows
+    assert ("mapping", "mal", "ambiguous_identity") in rows
