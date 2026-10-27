@@ -225,7 +225,8 @@ class DinsMappings:
         title = database.conn.execute(
             "SELECT imdb_id FROM titles WHERE media_type=? AND tmdb_id=?", (media_type, tmdb_id)
         ).fetchone()
-        archive = database.get_enrichment_state(tmdb_id, media_type, "imdb")["payload"] or {}
+        lookup_state = getattr(database, "get_enrichment_state", None)
+        archive = (lookup_state(tmdb_id, media_type, "imdb")["payload"] or {}) if callable(lookup_state) else {}
         known_imdb = (
             mappings.get("imdb")
             or database.get_title_mapping(tmdb_id=tmdb_id, media_type=media_type, id_type="imdb")

@@ -339,16 +339,58 @@ def _migration_003_mapping_item_value(conn: sqlite3.Connection) -> None:
         )
 
 
-def _migration_006_reconcile_enrichment_history(conn: sqlite3.Connection) -> None:
-    # Fork migration 3 and upstream migration 3 had different meanings. Preserve
-    # recorded history and install either missing schema without resetting work
-    # that has already been validated by a fork deployment.
-    _migration_003_mapping_item_value(conn)
-    enrichment_exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='enrichment_state'"
+def _migration_006_provider_enrichment_state(conn: sqlite3.Connection) -> None:
+    # Version 3 was used differently by an existing fork. Add missing cache
+    # fields without rewriting its ledger or replaying data validation holds.
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        ensure_column(conn, table_name="mappings", column_name="pmdb_item_value", column_type="TEXT")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS enrichment_state (
+                tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+                provider TEXT NOT NULL, payload TEXT, fetched_at INTEGER,
+                next_due INTEGER NOT NULL, PRIMARY KEY (tmdb_id, media_type, provider)
+            )
+        """)
+
+
+
+def _migration_007_episode_identity(conn: sqlite3.Connection) -> None:
+    # Existing fork databases already validated unsent episode work; only
+    # legacy databases without this cache need the one-time verification hold.
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='imdb_episode_identity'"
     ).fetchone() is not None
-    if not enrichment_exists:
-        _migration_003_enrichment_state(conn)
+    if exists:
+        return
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""
+            CREATE TABLE imdb_episode_identity (
+                imdb_id TEXT PRIMARY KEY, payload TEXT,
+                retryable INTEGER NOT NULL, next_due INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            UPDATE episode_ratings SET pmdb_status='failed', pmdb_claimed_at=NULL,
+                pmdb_last_error='Episode identity verification required'
+            WHERE label='IM' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """)
+
+
+
+def _migration_008_trakt_source_validation(conn: sqlite3.Connection) -> None:
+    prior = conn.execute("SELECT name FROM schema_migrations WHERE version=3").fetchone()
+    if prior is not None and prior["name"] == "enrichment_state":
+        # The original fork migration already held this legacy work. Preserve
+        # valid source-specific ratings queued by subsequent harvests.
+        return
+    with conn:
+        conn.execute("""
+            UPDATE ratings SET pmdb_status='failed', pmdb_claimed_at=NULL,
+                pmdb_last_error='Trakt source verification required'
+            WHERE label='TR' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """)
 
 
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
@@ -357,7 +399,9 @@ MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = 
     (3, "mapping_item_value", _migration_003_mapping_item_value),
     (4, "coverage_gaps", _migration_004_coverage_gaps),
     (5, "anime_mapping_holds", _migration_005_anime_mapping_holds),
-    (6, "reconcile_enrichment_history", _migration_006_reconcile_enrichment_history),
+    (6, "provider_enrichment_state", _migration_006_provider_enrichment_state),
+    (7, "episode_identity", _migration_007_episode_identity),
+    (8, "trakt_source_validation", _migration_008_trakt_source_validation),
 )
 
 

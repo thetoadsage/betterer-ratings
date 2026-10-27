@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from betterer_ratings.domain.models import APIResponse, Candidate, IMDbEpisodeArchiveCandidate
+from betterer_ratings.infra.db.schema_repo import apply_migrations
 from betterer_ratings.services.harvest.episode_identity import verify_episode_identities
 from betterer_ratings.services.harvest.episodes import run_imdb_episode_cycle
 
@@ -78,6 +79,30 @@ def test_two_imdb_ids_cannot_claim_the_same_episode(local_db):
     other = IMDbEpisodeArchiveCandidate("tt0010", "tt0012", 1, 2, 90, 300)
     client = SimpleNamespace(fetch_find_by_imdb=AsyncMock(return_value=response([coordinates()])))
     assert verify(local_db, client, entries=[ENTRY, other]) == ([], 0, 2)
+
+
+@pytest.mark.parametrize("existing_identity_cache", [False, True])
+def test_upgrade_holds_only_unverified_work_and_preserves_submitted_history(local_db, existing_identity_cache):
+    conn = local_db.conn
+    conn.execute("DELETE FROM schema_migrations WHERE version=7")
+    if existing_identity_cache:
+        conn.execute("INSERT INTO imdb_episode_identity VALUES ('tt0011','{}',0,200)")
+    else:
+        conn.execute("DROP TABLE imdb_episode_identity")
+    for episode, status in enumerate(["pending", "retry", "in_flight", "submitted"], start=1):
+        conn.execute("""INSERT INTO episode_ratings(tmdb_id,media_type,season,episode,label,score,
+                     fetched_at,pmdb_status,pmdb_item_id) VALUES (10,'tv',1,?,'IM',80,100,?,'owned')""",
+                     (episode, status))
+    conn.commit()
+    apply_migrations(conn)
+    rows = conn.execute("SELECT pmdb_status,pmdb_item_id FROM episode_ratings ORDER BY episode").fetchall()
+    statuses = ["pending", "retry", "in_flight", "submitted"] if existing_identity_cache else ["failed"] * 3 + ["submitted"]
+    assert [tuple(row) for row in rows] == [(status, "owned") for status in statuses]
+    if existing_identity_cache:
+        assert conn.execute("SELECT next_due FROM imdb_episode_identity").fetchone()[0] == 200
+    before_repeat = list(conn.iterdump())
+    apply_migrations(conn)
+    assert list(conn.iterdump()) == before_repeat
 
 
 @pytest.mark.parametrize("temporary_failure", [False, True])

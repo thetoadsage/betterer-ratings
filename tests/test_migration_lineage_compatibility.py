@@ -46,7 +46,7 @@ def test_existing_upstream_and_fork_databases_converge_without_replaying_validat
     ledger_before = dict(conn.execute("SELECT version,name FROM schema_migrations"))
     mapping_before = dict(conn.execute("SELECT * FROM mappings").fetchone())
 
-    assert schema_repo.apply_migrations(conn) == 6
+    assert schema_repo.apply_migrations(conn) == max(version for version, _, _ in schema_repo.MIGRATIONS)
     assert "pmdb_item_value" in {row["name"] for row in conn.execute("PRAGMA table_info(mappings)")}
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"enrichment_state", "imdb_episode_identity", "coverage_gaps", "anime_mapping_holds"} <= tables

@@ -36,6 +36,22 @@ ANIME = {"mal_id": 164, "title": "Mononoke Hime", "title_english": "Princess Mon
 CANDIDATE = Candidate(128, "movie", "Princess Mononoke", 1)
 
 
+def test_anime_validation_fetches_details_despite_cached_imdb_mapping(local_db):
+    from betterer_ratings.services.harvest.details import fetch_tmdb_details
+
+    local_db._upsert_mapping(128, "movie", "imdb", "tt0119698", 100)
+    client = SimpleNamespace(fetch_details=AsyncMock(return_value=APIResponse(200, {}, MOVIE, "")))
+    candidate = Candidate(128, "movie", "Princess Mononoke", 1, "ttl")
+    details, interrupted = asyncio.run(fetch_tmdb_details(
+        candidates=[candidate], stop_event=asyncio.Event(), tmdb_client=client,
+        db=local_db, details_concurrency=1, now_epoch_fn=lambda: 100,
+        logger=None, force_details=True,
+    ))
+    assert not interrupted
+    assert details[("movie", 128)] == MOVIE
+    client.fetch_details.assert_awaited_once_with("movie", 128)
+
+
 def test_anime_offline_database_lookup_requires_an_unambiguous_mal_id():
     lookup = build_mal_lookup([
         '{"license": "metadata line"}\n',

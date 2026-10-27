@@ -101,7 +101,8 @@ async def run_cycle(
         local_stats=local_stats,
         harvest_cycle_result_cls=harvest_cycle_result_cls,
     )
-    if not result.interrupted and getattr(self, "_pending_tmdb_export_cursors", None):
+    if (not result.interrupted and not result.tmdb_list_request_errors
+            and not result.mdblist_request_failures and getattr(self, "_pending_tmdb_export_cursors", None)):
         commit_export_cursors(self.db, self.tmdb_export_directory, self._pending_tmdb_export_cursors)
         self._pending_tmdb_export_cursors = {}
     return result

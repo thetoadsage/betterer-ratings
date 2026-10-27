@@ -39,6 +39,10 @@ The dashboard and API are exposed on port `8087` by default:
 http://localhost:8087
 ```
 
+The schema upgrade supports both existing migration-3 histories. Already
+validated fork queues and caches are retained; legacy unsent episode and Trakt
+work from older upstream releases is held once for source/identity verification.
+
 ## Container images and health
 
 The upstream CI workflow is retained and publishes this repository’s image at
@@ -98,7 +102,7 @@ are cached for seven days, misses for one day, and transient failures for five
 minutes. Existing published records are not automatically removed when numbering
 changes.
 
-On first startup after this update, an additive SQLite migration creates the
+On first startup after this update, additive SQLite migrations create the
 provider/episode caches. Existing titles gradually populate the metadata cache.
 Unsent IMDb episode ratings and Trakt ratings from the old pipeline are held in
 `failed` status with a verification message until validated ingestion requeues

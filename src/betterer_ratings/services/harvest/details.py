@@ -15,7 +15,11 @@ async def fetch_tmdb_details(
     logger: Any,
     refresh_seconds: int = 7 * 86400,
     retry_seconds: int = 3600,
+    force_details: bool = False,
 ) -> Tuple[Dict[Tuple[str, int], Optional[Dict[str, Any]]], bool]:
+    # This implementation always resolves identity metadata; retain the
+    # standalone anime feature's keyword when combining the feature branches.
+    del force_details
     details: Dict[Tuple[str, int], Optional[Dict[str, Any]]] = {}
     progress_lock = asyncio.Lock()
     queue: asyncio.Queue[Any] = asyncio.Queue()
