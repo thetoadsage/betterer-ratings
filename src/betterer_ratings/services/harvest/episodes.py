@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List
 
 from betterer_ratings.core.clock import format_duration
+from betterer_ratings.services.harvest.episode_identity import verify_episode_identities
 
 
 async def run_imdb_episode_cycle(
@@ -78,6 +79,7 @@ async def run_imdb_episode_cycle(
         return stats
 
     rows_queued = 0
+    retry_pending = False
     if batch:
         parent_ids = sorted({entry.parent_imdb_id for entry in batch})
         (
@@ -91,6 +93,7 @@ async def run_imdb_episode_cycle(
         stats["titles_mapped"] = len(mapped_parents)
         stats["titles_missing"] = int(missing_mappings)
         stats["lookup_errors"] = int(lookup_errors)
+        retry_pending = lookup_errors > 0
 
         grouped_entries: Dict[str, List[Any]] = defaultdict(list)
         for entry in batch:
@@ -102,18 +105,28 @@ async def run_imdb_episode_cycle(
             mapped_candidate = mapped_parents.get(parent_id)
             if mapped_candidate is None:
                 continue
+            verified, errors, skipped = await verify_episode_identities(
+                entries=entries, tmdb_id=mapped_candidate.tmdb_id, db=self.db,
+                tmdb_client=self.tmdb_client, stop_event=stop_event,
+                now_epoch_fn=now_epoch_fn, concurrency=self.details_concurrency,
+            )
+            stats["lookup_errors"] += errors
+            stats["identity_skipped"] = stats.get("identity_skipped", 0) + skipped
+            retry_pending = retry_pending or errors > 0
+            if stop_event.is_set():
+                break
             rows_queued += self.db.save_imdb_episode_ratings(
                 tmdb_id=mapped_candidate.tmdb_id,
                 media_type=mapped_candidate.media_type,
                 imdb_parent_id=parent_id,
-                entries=entries,
+                entries=verified,
                 now_ts=now_ts,
                 default_label="IM",
             )
 
     stats["rows_queued"] = int(rows_queued)
 
-    if not stop_event.is_set():
+    if not stop_event.is_set() and not retry_pending:
         self._commit_imdb_episode_cursor(
             cursor_line=next_cursor_line,
             cursor_byte=next_cursor_byte,

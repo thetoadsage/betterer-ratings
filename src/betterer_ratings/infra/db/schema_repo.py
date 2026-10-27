@@ -265,10 +265,34 @@ def _migration_003_mapping_item_value(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_007_episode_identity(conn: sqlite3.Connection) -> None:
+    # Existing fork databases already validated unsent episode work; only
+    # legacy databases without this cache need the one-time verification hold.
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='imdb_episode_identity'"
+    ).fetchone() is not None
+    if exists:
+        return
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""
+            CREATE TABLE imdb_episode_identity (
+                imdb_id TEXT PRIMARY KEY, payload TEXT,
+                retryable INTEGER NOT NULL, next_due INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            UPDATE episode_ratings SET pmdb_status='failed', pmdb_claimed_at=NULL,
+                pmdb_last_error='Episode identity verification required'
+            WHERE label='IM' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
     (3, "mapping_item_value", _migration_003_mapping_item_value),
+    (7, "episode_identity", _migration_007_episode_identity),
 )
 
 

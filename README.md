@@ -54,6 +54,19 @@ include:
 
 MDBList batch size and daily plan quota are separate limits.
 
+## Episode identity verification
+
+IMDb episode archive entries are matched by each episode's IMDb ID through TMDB.
+The worker uses the returned show, season and episode coordinates, verifies the
+parent show, and skips specials, ambiguous matches and conflicting episode slots.
+Parent-title matches alone do not establish episode numbering.
+
+A persistent cache retains matches for seven days, misses for one day and
+transient failures for five minutes. Transient lookup failures preserve the
+archive cursor for retry. On first upgrade, legacy unsent IMDb episode work is
+held for verification; submitted history and remote IDs are preserved. Existing
+identity caches are retained without re-holding validated work.
+
 ## Update or Roll Back
 
 ```bash
