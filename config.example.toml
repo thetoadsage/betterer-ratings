@@ -14,6 +14,12 @@ failed_retry_days = 7
 language = "en-US"
 rate_limit = { requests = 40, per_seconds = 1.0 }
 
+# Optional budgeted discovery using TMDB daily ID exports.
+[tmdb.daily_exports]
+enabled = false
+max_new_titles_per_scan = 25
+daily_detail_budget = 100
+
 [[tmdb.sources]]
 name = "movie/popular"
 max_pages = 500

@@ -7,6 +7,7 @@ from betterer_ratings.services.harvest import cycle_discovery_phase as harvest_c
 from betterer_ratings.services.harvest import cycle_mdblist_phase as harvest_cycle_mdblist_phase
 from betterer_ratings.services.harvest import cycle_precheck as harvest_cycle_precheck
 from betterer_ratings.services.harvest import cycle_tmdb_phase as harvest_cycle_tmdb_phase
+from betterer_ratings.services.harvest.discovery_tmdb_exports import commit_export_cursors
 
 
 async def run_cycle(
@@ -20,6 +21,7 @@ async def run_cycle(
     harvest_cycle_result_cls: Any,
 ) -> Any:
     self = harvester
+    self._pending_tmdb_export_cursors = {}
 
     await self._run_imdb_episode_cycle(stop_event)
     if stop_event.is_set():
@@ -68,6 +70,9 @@ async def run_cycle(
     else:
         logger.debug("[Harvester] Cycle collected 0 title candidate(s).")
     if not candidates:
+        if self._pending_tmdb_export_cursors:
+            commit_export_cursors(self.db, self.tmdb_export_directory, self._pending_tmdb_export_cursors)
+            self._pending_tmdb_export_cursors = {}
         logger.debug("[Harvester] No title candidates eligible this cycle.")
         return harvest_cycle_result_cls(
             selected_candidates=0,
@@ -90,7 +95,7 @@ async def run_cycle(
         return tmdb_phase_result
     assert tmdb_details is not None
 
-    return await harvest_cycle_mdblist_phase.run_mdblist_enrichment_phase(
+    result = await harvest_cycle_mdblist_phase.run_mdblist_enrichment_phase(
         harvester=self,
         logger=logger,
         now_epoch_fn=now_epoch_fn,
@@ -102,3 +107,8 @@ async def run_cycle(
         local_stats=local_stats,
         harvest_cycle_result_cls=harvest_cycle_result_cls,
     )
+    if (not result.interrupted and not result.tmdb_list_request_errors
+            and not result.mdblist_request_failures and self._pending_tmdb_export_cursors):
+        commit_export_cursors(self.db, self.tmdb_export_directory, self._pending_tmdb_export_cursors)
+        self._pending_tmdb_export_cursors = {}
+    return result

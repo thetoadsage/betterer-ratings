@@ -54,6 +54,19 @@ include:
 
 MDBList batch size and daily plan quota are separate limits.
 
+## Optional TMDB daily exports
+
+Set `[tmdb.daily_exports] enabled = true` for budgeted discovery from daily TMDB
+movie/TV ID exports. Defaults select at most 25 new titles per scan and 100 per
+UTC day; existing configurations keep this disabled. IDs provide candidates,
+not ratings or confirmed external mappings, and normal detail/enrichment checks
+still apply.
+
+Exports are cached under `/data/temp/tmdb_exports`. A snapshot stays pinned until
+exhausted; checkpoints advance after uninterrupted processing without reported
+provider failures. Adult/video entries, existing titles, duplicates and invalid
+IDs are skipped. A provider quota pause can defer the normal title pipeline.
+
 ## Update or Roll Back
 
 ```bash
