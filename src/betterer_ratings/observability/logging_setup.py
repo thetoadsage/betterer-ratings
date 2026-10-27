@@ -86,3 +86,4 @@ def configure_logging(config: AppConfig) -> None:
     root.setLevel(level)
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

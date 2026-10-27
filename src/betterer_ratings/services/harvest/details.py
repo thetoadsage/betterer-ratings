@@ -13,6 +13,7 @@ async def fetch_tmdb_details(
     details_concurrency: int,
     now_epoch_fn: Callable[[], int],
     logger: Any,
+    force_details: bool = False,
 ) -> Tuple[Dict[Tuple[str, int], Optional[Dict[str, Any]]], bool]:
     details: Dict[Tuple[str, int], Optional[Dict[str, Any]]] = {}
     progress_lock = asyncio.Lock()
@@ -39,7 +40,7 @@ async def fetch_tmdb_details(
             success = False
             try:
                 harvest_reason = str(getattr(candidate, "harvest_reason", "") or "").lower()
-                if harvest_reason in {"failed", "ttl"} and db.title_has_imdb_mapping(
+                if not force_details and harvest_reason in {"failed", "ttl"} and db.title_has_imdb_mapping(
                     tmdb_id=candidate.tmdb_id,
                     media_type=candidate.media_type,
                 ):

@@ -15,6 +15,7 @@ async def submit_mapping_group(
     logger: Any,
 ) -> None:
     """Resolve all existing mappings for a title with one PMDB lookup."""
+    rows = [row for row in rows if not db.defer_held_mapping(row)]
     if not rows:
         return
 
@@ -35,6 +36,9 @@ async def submit_mapping_group(
     if lookup_valid:
         submitted_at = now_epoch_fn()
         for row in list(unresolved):
+            if db.defer_held_mapping(row):
+                unresolved.remove(row)
+                continue
             id_type = str(row["id_type"])
             id_value = str(row["id_value"])
             cached_item_id = str(row["pmdb_item_id"] or "").strip() or None
@@ -131,6 +135,8 @@ async def submit_mapping_group(
         )
 
     for row in unresolved:
+        if db.defer_held_mapping(row):
+            continue
         cached_item_id = str(row["pmdb_item_id"] or "").strip() or None
         id_type = str(row["id_type"])
         row_to_submit = row
@@ -154,6 +160,8 @@ async def submit_mapping(
     first_non_empty_fn: Callable[..., Optional[str]],
     logger: Any,
 ) -> None:
+    if db.defer_held_mapping(row):
+        return
     tmdb_id = int(row["tmdb_id"])
     media_type = str(row["media_type"])
     id_type = str(row["id_type"])

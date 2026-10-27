@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 import betterer_ratings.constants as package_constants
 
@@ -68,7 +69,7 @@ class APIKeysConfig:
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "APIKeysConfig":
-        _reject_unknown_keys(value, allowed={"tmdb", "mdblist", "pmdb"}, path="api_keys")
+        _reject_unknown_keys(value, allowed={"tmdb", "mdblist", "pmdb", "mal", "jikan"}, path="api_keys")
         tmdb = _as_str(value.get("tmdb"), path="api_keys.tmdb").strip()
         mdblist = _as_str(value.get("mdblist"), path="api_keys.mdblist").strip()
         pmdb = _as_str(value.get("pmdb"), path="api_keys.pmdb").strip()
@@ -144,6 +145,14 @@ class RuntimeConfig:
     @property
     def imdb_archive_path(self) -> str:
         return package_constants.CONTAINER_IMDB_ARCHIVE_PATH
+
+    @property
+    def anime_offline_database_path(self) -> str:
+        return package_constants.CONTAINER_ANIME_OFFLINE_DATABASE_PATH
+
+    @property
+    def fribb_mappings_path(self) -> str:
+        return f"{self.temp_path}/anime-mappings/fribb-anime-list-full.json"
 
     @property
     def temp_path(self) -> str:
@@ -317,6 +326,63 @@ class MDBListConfig:
 
 
 @dataclass(frozen=True)
+class MALConfig:
+    enabled: bool = False
+    client_id: str = ""
+    fribb_mappings: bool = False
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "MALConfig":
+        _reject_unknown_keys(value, allowed={"enabled", "client_id", "fribb_mappings"}, path="mal")
+        enabled = value.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigValidationError("mal.enabled must be a boolean")
+        fribb_mappings = value.get("fribb_mappings", False)
+        if not isinstance(fribb_mappings, bool):
+            raise ConfigValidationError("mal.fribb_mappings must be a boolean")
+        if fribb_mappings and not enabled:
+            raise ConfigValidationError("mal.fribb_mappings requires mal.enabled")
+        client_id = _as_str(value.get("client_id", ""), path="mal.client_id").strip()
+        if enabled and (not client_id or client_id.lower().startswith("replace-me")):
+            raise ConfigValidationError("mal.client_id is required when mal.enabled is true")
+        return MALConfig(enabled=enabled, client_id=client_id, fribb_mappings=fribb_mappings)
+
+
+
+@dataclass(frozen=True)
+class JikanConfig:
+    enabled: bool = False
+    base_url: str = ""
+    discover_missing: bool = True
+    fallback: bool = True
+    max_search_pages: int = 4
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "JikanConfig":
+        _reject_unknown_keys(value, allowed={"enabled", "base_url", "discover_missing", "fallback", "max_search_pages"}, path="jikan")
+        flags = {k: value.get(k, k != "enabled") for k in ("enabled", "discover_missing", "fallback")}
+        for key, flag in flags.items():
+            if not isinstance(flag, bool):
+                raise ConfigValidationError(f"jikan.{key} must be a boolean")
+        url = _as_str(value.get("base_url", ""), path="jikan.base_url").strip().rstrip("/")
+        try:
+            parsed = urlsplit(url)
+            valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not (
+                parsed.username or parsed.password or parsed.query or parsed.fragment
+            )
+            _ = parsed.port
+        except ValueError:
+            valid = False
+        if (url or flags["enabled"]) and not valid:
+            raise ConfigValidationError("jikan.base_url must be an HTTP(S) URL without credentials, query or fragment")
+        pages = _as_int(value.get("max_search_pages", 4), path="jikan.max_search_pages")
+        if not 1 <= pages <= 10:
+            raise ConfigValidationError("jikan.max_search_pages must be between 1 and 10")
+        return JikanConfig(base_url=url, max_search_pages=pages, **flags)
+
+
+
+@dataclass(frozen=True)
 class PMDBConfig:
     api_rate_limit: RateLimitConfig
     ratings_limit: RateLimitConfig
@@ -365,12 +431,14 @@ class AppConfig:
     imdb: IMDbConfig
     mdblist: MDBListConfig
     pmdb: PMDBConfig
+    mal: MALConfig = MALConfig()
+    jikan: JikanConfig = JikanConfig()
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "AppConfig":
         _reject_unknown_keys(
             value,
-            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb"},
+            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "mal", "jikan"},
             path="<root>",
         )
         api_keys = APIKeysConfig.from_mapping(
@@ -381,6 +449,10 @@ class AppConfig:
         imdb = IMDbConfig.from_mapping(_require_mapping(value.get("imdb"), path="imdb"))
         mdblist = MDBListConfig.from_mapping(_require_mapping(value.get("mdblist"), path="mdblist"))
         pmdb = PMDBConfig.from_mapping(_require_mapping(value.get("pmdb"), path="pmdb"))
+        jikan = JikanConfig.from_mapping(_require_mapping(value.get("jikan", {}), path="jikan"))
+        mal = MALConfig.from_mapping(_require_mapping(value.get("mal", {}), path="mal"))
+        if jikan.enabled and not mal.enabled:
+            raise ConfigValidationError("jikan.enabled requires mal.enabled")
         return AppConfig(
             api_keys=api_keys,
             runtime=runtime,
@@ -388,6 +460,8 @@ class AppConfig:
             imdb=imdb,
             mdblist=mdblist,
             pmdb=pmdb,
+            mal=mal,
+            jikan=jikan,
         )
 
 

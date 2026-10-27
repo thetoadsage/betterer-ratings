@@ -4,7 +4,7 @@ import asyncio
 from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple
 
 
-async def run_mdblist_enrichment_phase(
+async def _run_standard_mdblist_enrichment_phase(
     *,
     harvester: Any,
     logger: Any,
@@ -176,3 +176,14 @@ async def run_mdblist_enrichment_phase(
         mdblist_request_failures=0 if mdblist_all_success else 1,
         interrupted=False,
     )
+
+
+async def run_mdblist_enrichment_phase(*, harvester: Any, logger: Any, now_epoch_fn: Callable[[], int], stop_event: asyncio.Event, candidates: Sequence[Any], tmdb_details: Dict[Tuple[str, int], Optional[Dict[str, Any]]], source_stats: Dict[str, Dict[str, int]], tmdb_list_request_errors: int, local_stats: Dict[str, int], harvest_cycle_result_cls: Any) -> Any:
+    if getattr(harvester, "mal_client", None) is None:
+        phase = _run_standard_mdblist_enrichment_phase
+    else:
+        from betterer_ratings.services.harvest.anime_enrichment_phase import (
+            run_anime_enrichment_phase,
+        )
+        phase = run_anime_enrichment_phase
+    return await phase(harvester=harvester, logger=logger, now_epoch_fn=now_epoch_fn, stop_event=stop_event, candidates=candidates, tmdb_details=tmdb_details, source_stats=source_stats, tmdb_list_request_errors=tmdb_list_request_errors, local_stats=local_stats, harvest_cycle_result_cls=harvest_cycle_result_cls)

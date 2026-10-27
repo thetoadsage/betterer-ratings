@@ -4,6 +4,7 @@ import sqlite3
 from typing import Callable, Dict, Tuple
 
 from betterer_ratings.core.clock import local_day_bounds
+from betterer_ratings.infra.db.anime_mapping_holds import MAPPING_ELIGIBLE_SQL
 
 
 def queue_counts(conn: sqlite3.Connection) -> Dict[str, int]:
@@ -42,12 +43,14 @@ def count_due_queue(conn: sqlite3.Connection, *, kind: str, now_ts: int) -> int:
         table = "episode_ratings"
     else:
         table = "mappings"
+    eligibility = f"AND {MAPPING_ELIGIBLE_SQL}" if table == "mappings" else ""
     row = conn.execute(
         f"""
         SELECT COUNT(*) AS c
         FROM {table}
         WHERE pmdb_status IN ('pending', 'retry')
           AND pmdb_retry_after <= ?
+          {eligibility}
         """,
         (int(now_ts),),
     ).fetchone()

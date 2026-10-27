@@ -73,3 +73,16 @@ daily_reserve = 0
 api_rate_limit = { requests = 15, per_seconds = 1.0 }
 ratings_limit = { requests = 15, per_seconds = 1.0 }
 mappings_limit = { requests = 15, per_seconds = 1.0 }
+
+# Optional validated anime enrichment.
+[mal]
+enabled = false
+client_id = ""
+fribb_mappings = false
+
+[jikan]
+enabled = false
+base_url = ""
+discover_missing = true
+fallback = true
+max_search_pages = 4

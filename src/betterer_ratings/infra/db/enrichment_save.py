@@ -17,6 +17,7 @@ def save_enriched_item(
     ratings: Dict[str, float],
     mappings: Dict[str, str],
     now_ts: int,
+    mdblist_attempted: bool = True,
     supported_pmdb_mapping_types: Sequence[str],
     clamp_0_100_fn: Callable[[Any], Optional[float]],
     upsert_title_fn: Callable[..., None],
@@ -35,6 +36,7 @@ def save_enriched_item(
             tmdb_vote_average=tmdb_vote_average,
             now_ts=now_ts,
             error_message=enrichment_error,
+            mdblist_attempted=mdblist_attempted,
         )
 
         for label, score in ratings.items():

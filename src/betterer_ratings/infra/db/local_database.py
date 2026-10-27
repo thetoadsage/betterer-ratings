@@ -4,12 +4,14 @@ import sqlite3
 from pathlib import Path
 
 from betterer_ratings.infra.db import schema_repo as db_schema_repo
+from betterer_ratings.infra.db.enrichment_state import EnrichmentStateMixin
 from betterer_ratings.infra.db.local_database_enrichment_mixin import LocalDatabaseEnrichmentMixin
 from betterer_ratings.infra.db.local_database_queue_mixin import LocalDatabaseQueueMixin
 from betterer_ratings.infra.db.local_database_state_mixin import LocalDatabaseStateMixin
 
 
 class LocalDatabase(
+    EnrichmentStateMixin,
     LocalDatabaseStateMixin,
     LocalDatabaseEnrichmentMixin,
     LocalDatabaseQueueMixin,

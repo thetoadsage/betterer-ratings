@@ -54,6 +54,38 @@ include:
 
 MDBList batch size and daily plan quota are separate limits.
 
+## Optional validated anime enrichment
+
+Enable `[mal]` with an official MAL `client_id` to enrich eligible titles with
+MAL ratings and validated MAL mappings. Existing configurations keep this off.
+Movies require matching title, type and year. TV mappings require a completed,
+ended single-season series with matching dates and episode count; franchise,
+cour, season and episode relationships are not flattened into title mappings.
+
+The anime-offline database bridges existing AniList/AniDB candidates to MAL.
+Optional `mal.fribb_mappings = true` adds cached Fribb candidates. Candidates
+must agree with source/stored ownership and pass MAL identity validation;
+unvalidated AniList/AniDB supplements are not contributed. Conflicts block new
+MAL work and retain reviewable provenance. A validated alternative found by
+Jikan is only a correction proposal and never an automatic replacement.
+
+Optional `[jikan]` can use a self-hosted Jikan `base_url` for complete paginated
+discovery and official-MAL detail fallback. It requires `mal.enabled`; incomplete,
+ambiguous and malformed searches do not establish an identity. MAL/Jikan use
+independent service gates, and an MDBList quota pause does not prevent eligible
+anime work. Cached MDBList IDs and MAL decisions are reused without replaying stale
+MDBList ratings or advancing an unattempted fetch timestamp.
+
+Caches live beneath `/data/temp`: anime mappings in `anime-mappings/` and Jikan
+searches in `jikan-discovery/`. Failed dataset refreshes retain the last good
+copy. An additive migration holds legacy unsent MAL mappings for validation
+without changing submitted history; mapping claims and final submission honor
+those holds. AniDB contributions are withheld after observed API rejection.
+
+Read-only review helpers are `scripts/audit_anime_mappings.py`,
+`scripts/preview_fribb_mappings.py` and `scripts/preview_jikan.py`; use `--help`
+for inputs. Cached validation is not proof of current remote ownership.
+
 ## Update or Roll Back
 
 ```bash

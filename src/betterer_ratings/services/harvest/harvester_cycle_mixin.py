@@ -17,6 +17,7 @@ from betterer_ratings.services.harvest.cycle_run_cycle import run_cycle
 from betterer_ratings.services.harvest.cycle_runner import run_harvester
 from betterer_ratings.services.harvest.discovery_local import collect_local_candidates
 from betterer_ratings.services.harvest.discovery_source_scan import collect_source_candidates
+from betterer_ratings.services.harvest.mal import MALResult
 
 LOGGER = logging.getLogger("betterer-ratings")
 
@@ -29,6 +30,8 @@ class HarvesterCycleMixin:
         details: Optional[Dict[str, Any]],
         md_item: Optional[Dict[str, Any]],
         now_ts: int,
+        mal_result: MALResult | None = None,
+        mdblist_attempted: bool = True,
     ) -> Tuple[int, int, int, int, int]:
         return harvest_enrichment.save_candidate_enrichment(
             db=self.db,
@@ -36,6 +39,8 @@ class HarvesterCycleMixin:
             details=details,
             md_item=md_item,
             now_ts=now_ts,
+            mal_result=mal_result,
+            mdblist_attempted=mdblist_attempted,
             parse_mdblist_ratings_fn=parse_mdblist_ratings,
             parse_tmdb_vote_average_fn=parse_tmdb_vote_average,
             extract_mappings_fn=extract_mappings,
@@ -106,6 +111,7 @@ class HarvesterCycleMixin:
             details_concurrency=self.details_concurrency,
             now_epoch_fn=now_epoch,
             logger=LOGGER,
+            force_details=self.mal_client is not None,
         )
 
     async def run(self, stop_event: asyncio.Event) -> None:

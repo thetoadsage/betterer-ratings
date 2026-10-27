@@ -74,6 +74,9 @@ def test_mapping_group_preflight_resolves_existing_and_posts_only_missing():
             return entry.get("id")
 
     class FakeDB:
+        def defer_held_mapping(self, row):
+            return False
+
         def __init__(self):
             self.submitted = []
             self.cleared = []
@@ -162,6 +165,9 @@ def test_mapping_group_validates_cached_id_before_resolving_by_value():
             return entry.get("id")
 
     class FakeDB:
+        def defer_held_mapping(self, _row):
+            return False
+
         def __init__(self):
             self.submitted = []
 
@@ -237,6 +243,9 @@ def test_mapping_group_never_deletes_an_unverified_cached_id():
             return entry.get("id")
 
     class FakeDB:
+        def defer_held_mapping(self, _row):
+            return False
+
         def __init__(self):
             self.cleared = []
 

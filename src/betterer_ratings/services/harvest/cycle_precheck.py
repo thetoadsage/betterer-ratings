@@ -11,6 +11,8 @@ def maybe_skip_title_enrichment(
     to_iso_fn: Callable[[int], str],
     harvest_cycle_result_cls: Any,
 ) -> Optional[Any]:
+    if getattr(harvester, "mal_client", None) is not None:
+        return None
     now_ts = now_epoch_fn()
     mdblist_pause_until = harvester._mdblist_daily_quota_pause_until(now_ts)
     if mdblist_pause_until <= now_ts:

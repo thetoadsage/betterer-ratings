@@ -216,6 +216,9 @@ def test_stale_duplicate_success_does_not_recache_foreign_rating_id():
 
 
 class _FakeMappingDB:
+    def defer_held_mapping(self, row):
+        return False
+
     def __init__(self):
         self.submitted: list[tuple] = []
 

@@ -146,6 +146,9 @@ def test_mapping_replacement_stops_when_delete_failure_is_not_ownership_denial()
 
 
 class _HandlerDB:
+    def defer_held_mapping(self, _row):
+        return False
+
     def __init__(self):
         self.cleared: list[tuple] = []
         self.submitted: list[tuple] = []

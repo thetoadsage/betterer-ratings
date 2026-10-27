@@ -4,6 +4,7 @@ import sqlite3
 from typing import Dict, List, Optional
 
 from betterer_ratings.core.clock import local_day_key, now_epoch
+from betterer_ratings.infra.db.anime_mapping_holds import MAPPING_ELIGIBLE_SQL, defer_held_mapping
 from betterer_ratings.infra.db.queue_claims import (
     claim_next_pending_episode_ratings_batch,
     claim_next_pending_mapping,
@@ -81,9 +82,12 @@ class LocalDatabaseQueueMixin:
             batch_size=batch_size,
         )
 
+    def defer_held_mapping(self, row: object) -> bool:
+        return defer_held_mapping(self.conn, row)
+
     def next_due_queue_kind(self, now_ts: int) -> Optional[str]:
         row = self.conn.execute(
-            """
+            f"""
             SELECT kind
             FROM (
                 SELECT 'rating' AS kind, MIN(fetched_at) AS fetched_at
@@ -93,7 +97,7 @@ class LocalDatabaseQueueMixin:
                 UNION ALL
                 SELECT 'mapping' AS kind, MIN(fetched_at) AS fetched_at
                 FROM mappings
-                WHERE pmdb_status IN ('pending', 'retry')
+                WHERE {MAPPING_ELIGIBLE_SQL} AND pmdb_status IN ('pending', 'retry')
                   AND pmdb_retry_after <= ?
                 UNION ALL
                 SELECT 'episode_ratings' AS kind, MIN(fetched_at) AS fetched_at

@@ -265,10 +265,47 @@ def _migration_003_mapping_item_value(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_005_anime_mapping_holds(conn: sqlite3.Connection) -> None:
+    with conn:
+        conn.execute("""
+            CREATE TABLE anime_mapping_holds (
+                tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+                id_type TEXT NOT NULL, reason TEXT NOT NULL, updated_at INTEGER NOT NULL,
+                PRIMARY KEY (tmdb_id, media_type, id_type)
+            )
+        """)
+        # Preserve every queue row and all submitted history. Legacy unsent MAL
+        # work needs current validation before it may resume.
+        conn.execute("""
+            INSERT INTO anime_mapping_holds
+            SELECT tmdb_id, media_type, id_type, 'validation_required', ? FROM mappings
+            WHERE id_type='mal' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """, (int(time.time()),))
+
+
+
+def _migration_006_provider_enrichment_state(conn: sqlite3.Connection) -> None:
+    # Version 3 was used differently by an existing fork. Add missing cache
+    # fields without rewriting its ledger or replaying data validation holds.
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        ensure_column(conn, table_name="mappings", column_name="pmdb_item_value", column_type="TEXT")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS enrichment_state (
+                tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+                provider TEXT NOT NULL, payload TEXT, fetched_at INTEGER,
+                next_due INTEGER NOT NULL, PRIMARY KEY (tmdb_id, media_type, provider)
+            )
+        """)
+
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
     (3, "mapping_item_value", _migration_003_mapping_item_value),
+    (5, "anime_mapping_holds", _migration_005_anime_mapping_holds),
+    (6, "provider_enrichment_state", _migration_006_provider_enrichment_state),
 )
 
 

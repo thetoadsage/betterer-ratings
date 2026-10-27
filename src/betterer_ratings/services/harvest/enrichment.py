@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from betterer_ratings.infra.db.anime_mapping_holds import update_mal_hold
+from betterer_ratings.services.harvest.mal import MALResult
+
 
 def save_candidate_enrichment(
     *,
@@ -10,6 +13,8 @@ def save_candidate_enrichment(
     details: Optional[Dict[str, Any]],
     md_item: Optional[Dict[str, Any]],
     now_ts: int,
+    mal_result: MALResult | None = None,
+    mdblist_attempted: bool = True,
     parse_mdblist_ratings_fn: Callable[[Optional[Dict[str, Any]]], Dict[str, float]],
     parse_tmdb_vote_average_fn: Callable[[Optional[Dict[str, Any]]], Optional[float]],
     extract_mappings_fn: Callable[
@@ -17,24 +22,40 @@ def save_candidate_enrichment(
     ],
 ) -> Tuple[int, int, int, int, int]:
     ratings = parse_mdblist_ratings_fn(md_item)
+    if mal_result is not None and mal_result.score is not None:
+        ratings["ML"] = mal_result.score
     tm_score = parse_tmdb_vote_average_fn(details)
     if tm_score is not None:
         ratings["TM"] = tm_score
 
     mappings = extract_mappings_fn(candidate.media_type, details, md_item)
+    # Supplemental IDs are candidates, not validated contributions. Keep source
+    # extraction for local MAL discovery, but require provider validation to queue.
+    mappings.pop("anilist", None)
+    mappings.pop("anidb", None)
+    mappings.pop("mal", None)
+    if mal_result is not None and mal_result.validated and mal_result.mal_id is not None:
+        mappings["mal"] = str(mal_result.mal_id)
     imdb_id = mappings.get("imdb")
 
     error_reasons = []
     if details is None:
         error_reasons.append("TMDB details failed or unavailable")
-    if md_item is None:
+    if md_item is None and mdblist_attempted:
         error_reasons.append("MDBList item missing or unavailable")
     enrichment_error = "; ".join(error_reasons) if error_reasons else None
 
+    # Publish a detected hold before any queue write or subsequent worker claim.
+    if mal_result is not None and not mal_result.validated:
+        update_mal_hold(db.conn, tmdb_id=candidate.tmdb_id, media_type=candidate.media_type,
+                        result=mal_result, now_ts=now_ts)
     queued_ratings, queued_mappings = db.save_enriched_item(
         tmdb_id=candidate.tmdb_id,
         media_type=candidate.media_type,
-        title=candidate.title,
+        title=(
+            str((details or {}).get("title" if candidate.media_type == "movie" else "name") or candidate.title)
+            if candidate.title == f"TMDB-{candidate.tmdb_id}" else candidate.title
+        ),
         imdb_id=imdb_id,
         popularity=candidate.popularity,
         tmdb_vote_average=(details or {}).get("vote_average")
@@ -44,7 +65,11 @@ def save_candidate_enrichment(
         ratings=ratings,
         mappings=mappings,
         now_ts=now_ts,
+        mdblist_attempted=mdblist_attempted,
     )
+    if mal_result is not None and mal_result.validated:
+        update_mal_hold(db.conn, tmdb_id=candidate.tmdb_id, media_type=candidate.media_type,
+                        result=mal_result, now_ts=now_ts)
     mdblist_ok = 1 if md_item is not None else 0
     mdblist_miss = 1 if md_item is None else 0
     tmdb_only = 1 if (md_item is None and details is not None) else 0
