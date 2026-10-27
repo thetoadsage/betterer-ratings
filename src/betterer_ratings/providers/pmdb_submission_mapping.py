@@ -6,6 +6,7 @@ from typing import Any, Optional, cast
 from betterer_ratings.core.retry import parse_retry_after
 from betterer_ratings.domain.models import PMDBDeleteResult, PMDBSubmitResult
 from betterer_ratings.providers.pmdb_helpers import (
+    PMDB_TRANSIENT_STATUSES,
     is_cloudflare_challenge,
     is_not_owned_delete_failure,
     mapping_lookup_owner_keys,
@@ -40,7 +41,7 @@ async def resolve_mapping_duplicate_or_conflict(
         id_value=id_value,
         media_type=media_type,
     )
-    if lookup.status in (429, 500, 502, 503, 504, 0):
+    if lookup.status in PMDB_TRANSIENT_STATUSES | {429}:
         return PMDBSubmitResult(
             success=False,
             retryable=True,
