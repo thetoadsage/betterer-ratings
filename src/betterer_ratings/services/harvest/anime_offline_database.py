@@ -107,7 +107,7 @@ class AnimeOfflineDatabase:
         self.refresh_seconds = refresh_seconds
         self._lookup: dict[tuple[str, str], frozenset[str]] | None = None
         self._loaded_mtime_ns: int | None = None
-        self._refresh_attempted_at = 0.0
+        self._refresh_attempted_at: float | None = None
         self._lock = asyncio.Lock()
 
     async def resolve(self, mappings: Mapping[str, object]) -> str | None:
@@ -127,8 +127,12 @@ class AnimeOfflineDatabase:
 
     async def _ensure_loaded(self) -> None:
         async with self._lock:
-            if self._is_stale() and time.monotonic() - self._refresh_attempted_at >= RETRY_SECONDS:
-                self._refresh_attempted_at = time.monotonic()
+            now = time.monotonic()
+            if self._is_stale() and (
+                self._refresh_attempted_at is None
+                or now - self._refresh_attempted_at >= RETRY_SECONDS
+            ):
+                self._refresh_attempted_at = now
                 try:
                     await self._download_refresh()
                 except (httpx.HTTPError, OSError, ValueError) as exc:
