@@ -265,10 +265,26 @@ def _migration_003_mapping_item_value(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_008_trakt_source_validation(conn: sqlite3.Connection) -> None:
+    prior = conn.execute("SELECT name FROM schema_migrations WHERE version=3").fetchone()
+    if prior is not None and prior["name"] == "enrichment_state":
+        # The original fork migration already held this legacy work. Preserve
+        # valid source-specific ratings queued by subsequent harvests.
+        return
+    with conn:
+        conn.execute("""
+            UPDATE ratings SET pmdb_status='failed', pmdb_claimed_at=NULL,
+                pmdb_last_error='Trakt source verification required'
+            WHERE label='TR' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """)
+
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
     (3, "mapping_item_value", _migration_003_mapping_item_value),
+    (8, "trakt_source_validation", _migration_008_trakt_source_validation),
 )
 
 
