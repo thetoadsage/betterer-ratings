@@ -61,6 +61,13 @@ class LocalDatabaseEnrichmentMixin:
     def title_key_set(self) -> set[Tuple[str, int]]:
         return db_harvest_repo.title_key_set(self.conn)
 
+    def get_title_mapping(self, *, tmdb_id: int, media_type: str, id_type: str) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT id_value FROM mappings WHERE tmdb_id=? AND media_type=? AND id_type=?",
+            (tmdb_id, media_type, id_type),
+        ).fetchone()
+        return str(row["id_value"]) if row else None
+
     def title_has_imdb_mapping(self, *, tmdb_id: int, media_type: str) -> bool:
         return db_harvest_repo.title_has_imdb_mapping(
             self.conn,

@@ -10,6 +10,7 @@ from betterer_ratings.infra.rate_limit.service_gate import ServiceGate
 from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.pmdb_client import PMDBClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
+from betterer_ratings.services.harvest.dins_mappings import DinsMappings
 from betterer_ratings.services.harvest.harvester import Harvester
 from betterer_ratings.services.submit.submitter import Submitter
 
@@ -29,6 +30,7 @@ class AppContainer:
     pmdb_client: PMDBClient
     harvester: Harvester
     submitter: Submitter
+    dins_mapping_cache: DinsMappings | None = None
 
 
 def build_container(*, config: AppConfig) -> AppContainer:
@@ -105,11 +107,17 @@ def build_container(*, config: AppConfig) -> AppContainer:
         mapping_gate=pmdb_mapping_gate,
     )
 
+    dins_mapping_cache = (
+        DinsMappings(Path(app_config.runtime.temp_path) / "dins-mappings/index.sqlite3")
+        if app_config.dins.enabled else None
+    )
+
     harvester = Harvester(
         config=app_config,
         db=db,
         tmdb_client=tmdb_client,
         mdblist_client=mdblist_client,
+        dins_mapping_cache=dins_mapping_cache,
     )
     submitter = Submitter(
         config=app_config,
@@ -128,6 +136,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
         pmdb_mapping_gate=pmdb_mapping_gate,
         tmdb_client=tmdb_client,
         mdblist_client=mdblist_client,
+        dins_mapping_cache=dins_mapping_cache,
         pmdb_client=pmdb_client,
         harvester=harvester,
         submitter=submitter,

@@ -48,6 +48,7 @@ class HarvesterIMDbMapMixin:
             normalize_imdb_title_id_fn=normalize_imdb_title_id,
             parse_int_fn=parse_int,
             candidate_cls=Candidate,
+            dins_mapping_cache=getattr(self, "dins_mapping_cache", None),
         )
 
     async def _map_imdb_candidates_to_tmdb(
@@ -56,6 +57,10 @@ class HarvesterIMDbMapMixin:
         candidates: Sequence[Any],
         stop_event: asyncio.Event,
     ) -> Tuple[List[Candidate], int, int]:
+        dins = getattr(self, "dins_mapping_cache", None)
+        if dins is not None and not stop_event.is_set():
+            await dins.prepare()
+
         def resolve_local(imdb_id: str, media_type: str) -> Optional[Candidate]:
             return self._resolve_imdb_to_tmdb_local(
                 imdb_id=imdb_id,
@@ -85,6 +90,10 @@ class HarvesterIMDbMapMixin:
         parent_ids: Sequence[str],
         stop_event: asyncio.Event,
     ) -> Tuple[Dict[str, Candidate], int, int]:
+        dins = getattr(self, "dins_mapping_cache", None)
+        if dins is not None and not stop_event.is_set():
+            await dins.prepare()
+
         def resolve_local(imdb_id: str, media_type: str) -> Optional[Candidate]:
             return self._resolve_imdb_to_tmdb_local(
                 imdb_id=imdb_id,

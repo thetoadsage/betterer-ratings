@@ -36,6 +36,7 @@ class HarvesterCycleMixin:
             details=details,
             md_item=md_item,
             now_ts=now_ts,
+            dins_mapping_cache=getattr(self, "dins_mapping_cache", None),
             parse_mdblist_ratings_fn=parse_mdblist_ratings,
             parse_tmdb_vote_average_fn=parse_tmdb_vote_average,
             extract_mappings_fn=extract_mappings,

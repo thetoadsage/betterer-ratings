@@ -68,7 +68,7 @@ class APIKeysConfig:
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "APIKeysConfig":
-        _reject_unknown_keys(value, allowed={"tmdb", "mdblist", "pmdb"}, path="api_keys")
+        _reject_unknown_keys(value, allowed={"tmdb", "mdblist", "pmdb", "dins"}, path="api_keys")
         tmdb = _as_str(value.get("tmdb"), path="api_keys.tmdb").strip()
         mdblist = _as_str(value.get("mdblist"), path="api_keys.mdblist").strip()
         pmdb = _as_str(value.get("pmdb"), path="api_keys.pmdb").strip()
@@ -358,6 +358,20 @@ class PMDBConfig:
 
 
 @dataclass(frozen=True)
+class DinsConfig:
+    enabled: bool = False
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "DinsConfig":
+        _reject_unknown_keys(value, allowed={"enabled"}, path="dins")
+        enabled = value.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigValidationError("dins.enabled must be a boolean")
+        return DinsConfig(enabled=enabled)
+
+
+
+@dataclass(frozen=True)
 class AppConfig:
     api_keys: APIKeysConfig
     runtime: RuntimeConfig
@@ -365,12 +379,13 @@ class AppConfig:
     imdb: IMDbConfig
     mdblist: MDBListConfig
     pmdb: PMDBConfig
+    dins: DinsConfig = DinsConfig()
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "AppConfig":
         _reject_unknown_keys(
             value,
-            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb"},
+            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "dins"},
             path="<root>",
         )
         api_keys = APIKeysConfig.from_mapping(
@@ -388,6 +403,7 @@ class AppConfig:
             imdb=imdb,
             mdblist=mdblist,
             pmdb=pmdb,
+            dins=DinsConfig.from_mapping(_require_mapping(value.get("dins", {}), path="dins")),
         )
 
 

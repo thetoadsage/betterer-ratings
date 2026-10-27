@@ -20,6 +20,9 @@ async def run_cycle(
     harvest_cycle_result_cls: Any,
 ) -> Any:
     self = harvester
+    dins = getattr(self, "dins_mapping_cache", None)
+    if dins is not None and not stop_event.is_set():
+        await dins.prepare()
 
     await self._run_imdb_episode_cycle(stop_event)
     if stop_event.is_set():

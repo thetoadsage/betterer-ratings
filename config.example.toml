@@ -73,3 +73,7 @@ daily_reserve = 0
 api_rate_limit = { requests = 15, per_seconds = 1.0 }
 ratings_limit = { requests = 15, per_seconds = 1.0 }
 mappings_limit = { requests = 15, per_seconds = 1.0 }
+
+# Optional cached IMDb/TMDB/TVDB mapping supplements.
+[dins]
+enabled = false

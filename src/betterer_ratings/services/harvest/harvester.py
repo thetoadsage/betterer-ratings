@@ -21,6 +21,7 @@ from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
 from betterer_ratings.services.harvest import imdb_index_io as harvest_imdb_index_io
 from betterer_ratings.services.harvest import setup as harvest_setup
+from betterer_ratings.services.harvest.dins_mappings import DinsMappings
 from betterer_ratings.services.harvest.discovery_local import (
     mdblist_daily_quota_pause_until,
     source_scan_due,
@@ -86,11 +87,13 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         db: LocalDatabase,
         tmdb_client: TMDBClient,
         mdblist_client: MDBListClient,
+        dins_mapping_cache: DinsMappings | None = None,
     ):
         self.config = config
         self.db = db
         self.tmdb_client = tmdb_client
         self.mdblist_client = mdblist_client
+        self.dins_mapping_cache = dins_mapping_cache
         harvest_setup.configure_harvester(
             harvester=self,
             config=config,
@@ -117,6 +120,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
 
     def close(self) -> None:
         self.imdb_cache.close()
+        if self.dins_mapping_cache is not None:
+            self.dins_mapping_cache.close()
 
     def _mdblist_daily_quota_pause_until(self, now_ts: int) -> int:
         return mdblist_daily_quota_pause_until(

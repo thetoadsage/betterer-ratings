@@ -54,6 +54,30 @@ include:
 
 MDBList batch size and daily plan quota are separate limits.
 
+## Optional Dins ID mappings
+
+Set `enabled = true` under `[dins]` to use
+[dins-mappings](https://github.com/0xConstant1/dins-mappings) as a trusted supplemental
+IMDb/TMDB/TVDB source. No additional credentials are required. Existing configurations
+without this section keep it disabled.
+
+The worker downloads both movie and TV exports daily and builds an indexed SQLite
+cache at `/data/temp/dins-mappings/index.sqlite3`. Downloads and parsing must succeed
+for both exports before the cache is replaced. Failed refreshes keep the last good
+cache and retry after an hour; without a usable cache, normal lookups continue.
+
+IMDb archive title and parent-show lookups use unambiguous cached mappings to avoid
+TMDB `/find` requests. Missing or conflicting matches fall back to the existing
+lookup flow. Title details still refresh normally; episode identities still require
+the existing exact TMDB episode lookup.
+
+During title enrichment, Dins fills missing IMDb and TVDB mappings through the normal
+submission queue. It never replaces a different source/stored ID, and skips Dins
+additions when an ID belongs to another local title. Movie and TV namespaces remain
+separate, and duplicate ownership within an export is rejected. TVmaze IDs are not
+submitted. Enabling this uses normal discovery/refresh scheduling, without a bulk
+import or historical correction pass.
+
 ## Update or Roll Back
 
 ```bash
