@@ -91,8 +91,48 @@ Run locally with `betterer-ratings --config config.toml`, or build a local image
 docker build -t betterer-ratings:local .
 ```
 
-Logs are written as structured JSON to stdout. The supplied Compose service
-rotates Docker logs.
+## Logs
+
+Logs are structured JSON on stdout. Docker or your host logging stack should
+handle collection, retention, and rotation. The included Compose configuration
+rotates four files of up to 25 MB each per container. Dashboard logs are an
+in-memory view: the latest 500 entries plus up to 500 retained warnings/errors,
+deduplicated and ordered by time. They reset when the process restarts; the
+dashboard Clear button only hides entries in the current browser view.
+
+Each JSON entry includes `timestamp` (Unix seconds), `level`, `logger`, and
+`message`. Recognized component labels also add `component`, `provider` where
+applicable, and a template-based fallback `event`; explicit event names take
+precedence. Common credential fields, authorization tokens, and URL credentials
+are masked in messages, nested context, and tracebacks. Avoid logging raw
+credentials or full request payloads; redaction recognizes common patterns,
+not every possible secret format.
+
+Useful events for troubleshooting:
+
+- `http.request.completed`: final status, outcome, attempts, elapsed milliseconds
+  (including gate waits and backoff), and whether a retry recovered. HTTP attempt
+  logs share a `request_id` for that call. Routine successes, expected 404s,
+  and gate deferrals stay at DEBUG; recovered requests appear at INFO and
+  exhausted retries at WARNING.
+- `mapping.retry_scheduled`, `rating.retry_scheduled`, `mapping.failed`, and
+  `rating.failed`: title/provider identity, status/error code, attempt budget,
+  error detail, and next retry time when scheduled.
+- `episode_ratings.unresolved`: title, season, affected episodes, status and
+  retryability.
+- `harvest.cycle.completed` / `harvest.cycle.failed`: cycle duration, selected
+  candidates and discovery/enrichment request error counts, or a traceback.
+  Empty successful cycles stay at DEBUG. Queue alerts and submission summaries
+  remain available as `queue.alert.*` and `submission.summary`.
+
+Set `[worker] log_level = "DEBUG"` to investigate individual HTTP calls; INFO is
+the normal operating level. The same level applies to stdout and the dashboard.
+For example, to inspect mapping failures from the last hour:
+
+```bash
+docker logs --since 1h betterer-ratings 2>&1 | jq -R 'fromjson? | select(.event == "mapping.failed")'
+```
+
 
 ## License
 

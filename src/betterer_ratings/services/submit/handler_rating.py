@@ -33,6 +33,13 @@ async def submit_rating(
         score=score,
         existing_pmdb_item_id=pmdb_item_id,
     )
+    result_context = {
+        "entity": "rating", "provider": "pmdb", "tmdb_id": tmdb_id,
+        "media_type": media_type, "label": label, "score": score,
+        "status": result.status_code, "error_code": result.error_code,
+        "endpoint": result.endpoint, "attempt": attempts + 1,
+        "max_attempts": max_retry_attempts,
+    }
 
     if result.stale_cached_item_id and pmdb_item_id:
         # PMDB confirmed our cached id belongs to another account; stop
@@ -113,6 +120,7 @@ async def submit_rating(
                     tmdb_id,
                     label,
                     score,
+                    extra={**result_context, "event": "rating.confirmed"},
                 )
                 return
 
@@ -138,6 +146,7 @@ async def submit_rating(
                 tmdb_id,
                 label,
                 score,
+                extra={**result_context, "event": "rating.failed", "reason": "max_attempts", "error": result.error_text[:500]},
             )
             return
 
@@ -161,6 +170,7 @@ async def submit_rating(
             tmdb_id,
             label,
             score,
+            extra={**result_context, "event": "rating.retry_scheduled", "retry_at": retry_at, "backoff_seconds": retry_delay, "error": result.error_text[:500]},
         )
         return
 
@@ -180,4 +190,5 @@ async def submit_rating(
         label,
         score,
         result.error_text[:200],
+        extra={**result_context, "event": "rating.failed", "reason": "non_retryable", "error": result.error_text[:500]},
     )

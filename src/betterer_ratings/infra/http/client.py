@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
+import uuid
 from typing import Any, Callable, Dict, Optional
 
 import httpx
@@ -91,8 +93,45 @@ class HTTPClient:
         last_response: Optional[APIResponse] = None
         safe_url = self._sanitize_url_for_logs(url)
         consecutive_pool_errors = 0
+        attempt_limit = self.max_retries
+        started = time.monotonic()
+        request_context = {
+            "component": "http",
+            "request_id": uuid.uuid4().hex,
+            "method": method,
+            "endpoint": safe_url,
+        }
+        if gate is not None:
+            request_context["provider"] = str(getattr(gate, "name", "http"))
 
-        for attempt in range(self.max_retries):
+        def completed(
+            response: APIResponse, attempts: int, *, deferred: bool = False,
+            error: Exception | None = None,
+        ) -> APIResponse:
+            success = 200 <= response.status < 400
+            outcome = "deferred" if deferred else "success" if success else "failed"
+            level = logging.DEBUG if deferred or (success and attempts == 1) or response.status in {401, 403, 404} else (
+                logging.INFO if success else logging.WARNING
+            )
+            self._logger.log(
+                level,
+                "HTTP %s %s completed: outcome=%s status=%s attempts=%s",
+                method, safe_url, outcome, response.status, attempts,
+                extra={
+                    **request_context,
+                    "event": "http.request.completed",
+                    "outcome": outcome,
+                    "status": response.status,
+                    "attempts": attempts,
+                    "max_attempts": attempt_limit,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                    "recovered": success and attempts > 1,
+                    **({"error_type": type(error).__name__, "error": str(error)} if error else {}),
+                },
+            )
+            return response
+
+        for attempt in range(attempt_limit):
             if gate is not None:
                 acquired = await gate.acquire(max_pause_wait_seconds=max_pause_wait_seconds)
                 if not acquired:
@@ -102,7 +141,7 @@ class HTTPClient:
                         if callable(pause_remaining_fn)
                         else int(max_pause_wait_seconds or 1)
                     )
-                    return APIResponse(
+                    return completed(APIResponse(
                         status=429,
                         headers={"retry-after": str(pause_remaining)},
                         data={
@@ -110,7 +149,7 @@ class HTTPClient:
                             "retry_after": pause_remaining,
                         },
                         text="service paused",
-                    )
+                    ), attempt, deferred=True)
 
             try:
                 client = await self._get_client()
@@ -125,6 +164,8 @@ class HTTPClient:
                 sleep_for = min(60, (2**attempt) + random.random())
                 error_type = exc.__class__.__name__
                 error_repr = repr(exc)
+                retrying = attempt < attempt_limit - 1
+                backoff = sleep_for if retrying else 0
                 recyclable_pool_error = isinstance(
                     exc,
                     (httpx.ReadError, httpx.RemoteProtocolError),
@@ -133,7 +174,7 @@ class HTTPClient:
                     consecutive_pool_errors + 1 if recyclable_pool_error else 0
                 )
                 pool_recycled = False
-                if consecutive_pool_errors >= 2 and attempt < self.max_retries - 1:
+                if consecutive_pool_errors >= 2 and attempt < attempt_limit - 1:
                     pool_recycled = await self._recycle_client(client)
                     consecutive_pool_errors = 0
                     if pool_recycled:
@@ -145,6 +186,7 @@ class HTTPClient:
                             error_type,
                             error_repr,
                             extra={
+                                **request_context,
                                 "event": "http.connection_pool_recycled",
                                 "method": method,
                                 "endpoint": safe_url,
@@ -162,21 +204,24 @@ class HTTPClient:
                     if self._should_log_network_error(throttle_key):
                         self._logger.info(
                             "Network unavailable for %s %s (attempt %s/%s). "
-                            "Backing off %.1fs: error_type=%s error_repr=%s",
+                            "Backoff %.1fs; retrying=%s: error_type=%s error_repr=%s",
                             method,
                             safe_url,
                             attempt + 1,
-                            self.max_retries,
-                            sleep_for,
+                            attempt_limit,
+                            backoff,
+                            retrying,
                             error_type,
                             error_repr,
                             extra={
+                                **request_context,
                                 "event": "http.transport_retry",
                                 "method": method,
                                 "endpoint": safe_url,
                                 "attempt": attempt + 1,
-                                "max_attempts": self.max_retries,
-                                "backoff_seconds": sleep_for,
+                                "max_attempts": attempt_limit,
+                                "backoff_seconds": backoff,
+                                "retrying": retrying,
                                 "error_type": error_type,
                                 "error_repr": error_repr,
                                 "pool_recycled": pool_recycled,
@@ -189,28 +234,31 @@ class HTTPClient:
                         method,
                         safe_url,
                         attempt + 1,
-                        self.max_retries,
+                        attempt_limit,
                         error_type,
                         error_repr,
                         extra={
+                            **request_context,
                             "event": "http.error",
                             "method": method,
                             "endpoint": safe_url,
                             "attempt": attempt + 1,
-                            "max_attempts": self.max_retries,
+                            "max_attempts": attempt_limit,
+                            "backoff_seconds": backoff,
+                            "retrying": retrying,
                             "error_type": error_type,
                             "error_repr": error_repr,
                             "pool_recycled": pool_recycled,
                         },
                     )
 
-                if attempt == self.max_retries - 1:
-                    return APIResponse(
+                if attempt == attempt_limit - 1:
+                    return completed(APIResponse(
                         status=0,
                         headers={},
                         data={"error": str(exc)},
                         text=str(exc),
-                    )
+                    ), attempt + 1, error=exc)
                 await asyncio.sleep(sleep_for)
                 continue
 
@@ -240,14 +288,25 @@ class HTTPClient:
                 retry_after = self._parse_retry_after(response.headers.get("retry-after"), 5)
                 if gate is not None:
                     gate.pause_for(retry_after, "429 Too Many Requests")
+                retrying = attempt < attempt_limit - 1 and (max_pause_wait_seconds is None or retry_after <= max_pause_wait_seconds)
                 self._logger.warning(
-                    "429 from %s %s. Retry-After=%s",
+                    "429 from %s %s. Retry-After=%s; retrying=%s (attempt %s/%s)",
                     method,
                     safe_url,
                     format_duration(retry_after),
+                    retrying,
+                    attempt + 1,
+                    attempt_limit,
+                    extra={
+                        **request_context, "event": "http.rate_limited", "status": 429,
+                        "attempt": attempt + 1, "max_attempts": attempt_limit,
+                        "retrying": retrying,
+                        "backoff_seconds": retry_after if retrying else 0,
+                        "retry_after_seconds": retry_after,
+                    },
                 )
-                if attempt == self.max_retries - 1:
-                    return response
+                if attempt == attempt_limit - 1:
+                    return completed(response, attempt + 1)
                 if (
                     max_pause_wait_seconds is not None
                     and retry_after > max_pause_wait_seconds
@@ -258,29 +317,37 @@ class HTTPClient:
                         safe_url,
                         format_duration(retry_after),
                         extra={
+                            **request_context,
                             "event": "http.rate_limit_deferred",
                             "method": method,
                             "endpoint": safe_url,
                             "retry_after_seconds": retry_after,
                         },
                     )
-                    return response
+                    return completed(response, attempt + 1, deferred=True)
                 await asyncio.sleep(retry_after)
                 continue
 
             if response.status in {500, 502, 503, 504}:
                 sleep_for = min(60, (2**attempt) + random.random())
                 self._logger.warning(
-                    "%s from %s %s. Retrying in %.1fs (attempt %s/%s)",
+                    "%s from %s %s. Backoff %.1fs; retrying=%s (attempt %s/%s)",
                     response.status,
                     method,
                     safe_url,
-                    sleep_for,
+                    sleep_for if attempt < attempt_limit - 1 else 0,
+                    attempt < attempt_limit - 1,
                     attempt + 1,
-                    self.max_retries,
+                    attempt_limit,
+                    extra={
+                        **request_context, "event": "http.server_error", "status": response.status,
+                        "attempt": attempt + 1, "max_attempts": attempt_limit,
+                        "retrying": attempt < attempt_limit - 1,
+                        "backoff_seconds": sleep_for if attempt < attempt_limit - 1 else 0,
+                    },
                 )
-                if attempt == self.max_retries - 1:
-                    return response
+                if attempt == attempt_limit - 1:
+                    return completed(response, attempt + 1)
                 await asyncio.sleep(sleep_for)
                 continue
 
@@ -295,11 +362,15 @@ class HTTPClient:
                         method,
                         safe_url,
                         suffix,
+                        extra={
+                            **request_context, "event": "http.auth_error", "status": response.status,
+                            "attempt": attempt + 1,
+                        },
                     )
 
-            return response
+            return completed(response, attempt + 1)
 
         if last_response is not None:
-            return last_response
+            return completed(last_response, attempt_limit)
 
-        return APIResponse(status=0, headers={}, data=None, text="unknown error")
+        return completed(APIResponse(status=0, headers={}, data=None, text="unknown error"), 0)

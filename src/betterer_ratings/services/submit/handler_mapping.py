@@ -168,6 +168,13 @@ async def submit_mapping(
         id_value=id_value,
         existing_pmdb_item_id=pmdb_item_id,
     )
+    result_context = {
+        "entity": "mapping", "provider": "pmdb", "tmdb_id": tmdb_id,
+        "media_type": media_type, "id_type": id_type, "id_value": id_value,
+        "status": result.status_code, "error_code": result.error_code,
+        "endpoint": result.endpoint, "attempt": attempts + 1,
+        "max_attempts": max_retry_attempts,
+    }
 
     if result.stale_cached_item_id and pmdb_item_id:
         db.clear_mapping_pmdb_item_id(tmdb_id, media_type, id_type)
@@ -252,6 +259,7 @@ async def submit_mapping(
                     tmdb_id,
                     id_type,
                     id_value,
+                    extra={**result_context, "event": "mapping.confirmed"},
                 )
                 return
 
@@ -278,6 +286,7 @@ async def submit_mapping(
                 tmdb_id,
                 id_type,
                 id_value,
+                extra={**result_context, "event": "mapping.failed", "reason": "max_attempts", "error": result.error_text[:500]},
             )
             return
 
@@ -301,6 +310,7 @@ async def submit_mapping(
             tmdb_id,
             id_type,
             id_value,
+            extra={**result_context, "event": "mapping.retry_scheduled", "retry_at": retry_at, "backoff_seconds": retry_delay, "error": result.error_text[:500]},
         )
         return
 
@@ -321,15 +331,8 @@ async def submit_mapping(
         id_value,
         result.error_text[:200],
         extra={
-            "event": (
-                "mapping.foreign_owner_conflict"
-                if result.error_code == "mapping_owned_by_other"
-                else "mapping.failed"
-            ),
-            "entity": "mapping",
-            "media_type": media_type,
-            "tmdb_id": tmdb_id,
-            "id_type": id_type,
-            "error_code": result.error_code,
+            **result_context,
+            "event": "mapping.foreign_owner_conflict" if result.error_code == "mapping_owned_by_other" else "mapping.failed",
+            "reason": "non_retryable", "error": result.error_text[:500],
         },
     )

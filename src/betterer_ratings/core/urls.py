@@ -12,10 +12,16 @@ def sanitize_url_for_logs(url: str) -> str:
         "auth",
         "authorization",
         "key",
+        "password",
+        "client_secret",
+        "refresh_token",
     }
     try:
         parts = urlsplit(url)
-        if not parts.query:
+        netloc = parts.netloc
+        if "@" in netloc:
+            netloc = "***@" + netloc.rsplit("@", 1)[1]
+        if not parts.query and netloc == parts.netloc:
             return url
         sanitized_query = []
         for key, value in parse_qsl(parts.query, keep_blank_values=True):
@@ -26,7 +32,7 @@ def sanitize_url_for_logs(url: str) -> str:
         return urlunsplit(
             (
                 parts.scheme,
-                parts.netloc,
+                netloc,
                 parts.path,
                 urlencode(sanitized_query, doseq=True),
                 parts.fragment,

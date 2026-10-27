@@ -121,6 +121,44 @@ def test_logs_tab_provides_level_filter_and_client_side_clear() -> None:
     assert "Date.now()" not in clear_handler_body
 
 
+def test_logs_tab_has_autoscroll_toggle_default_on() -> None:
+    html = _dashboard_html()
+
+    assert 'id="log-autoscroll-toggle"' in html
+    assert 'type="checkbox" id="log-autoscroll-toggle" checked' in html
+    assert "let logsAutoScroll = true;" in html
+    assert "function scrollLogsToBottom()" in html
+    assert "function isLogListNearBottom(list)" in html
+
+    # Turning the toggle on must immediately scroll to the newest entry.
+    toggle_handler_start = html.index("log-autoscroll-toggle')?.addEventListener")
+    toggle_handler_end = html.index("});", toggle_handler_start)
+    toggle_handler_body = html[toggle_handler_start:toggle_handler_end]
+    assert "setLogsAutoScroll(e.target.checked)" in toggle_handler_body
+
+    # renderLogs() must only pin to bottom when auto-scroll is enabled, so
+    # logs arriving with it off cannot move the viewer's scroll position.
+    render_logs_start = html.index("function renderLogs()")
+    render_logs_end = html.index("\n}\n", render_logs_start)
+    render_logs_body = html[render_logs_start:render_logs_end]
+    assert "if (logsAutoScroll) scrollLogsToBottom();" in render_logs_body
+
+
+def test_logs_scroll_listener_only_disables_autoscroll_when_scrolled_away_from_bottom() -> None:
+    html = _dashboard_html()
+
+    scroll_handler_start = html.index("log-list')?.addEventListener('scroll'")
+    scroll_handler_end = html.index("});", scroll_handler_start)
+    scroll_handler_body = html[scroll_handler_start:scroll_handler_end]
+
+    assert "isLogListNearBottom(list)" in scroll_handler_body
+    assert "logsAutoScroll = false" in scroll_handler_body
+    # It must never force autoScroll back on or force-scroll from within the
+    # listener -- only the explicit toggle does that -- otherwise it would
+    # fight the user's manual scrolling.
+    assert "scrollLogsToBottom()" not in scroll_handler_body
+
+
 def test_services_api_hides_expired_pause_reason() -> None:
     class FakeDB:
         def get_service_state(self, service: str) -> dict[str, object] | None:

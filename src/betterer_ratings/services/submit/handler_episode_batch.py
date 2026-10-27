@@ -398,4 +398,11 @@ async def submit_episode_ratings_batch(
         season,
         len(unresolved_rows),
         status_code,
+        extra={
+            "event": "episode_ratings.unresolved", "entity": "episode_ratings", "provider": "pmdb",
+            "tmdb_id": tmdb_id, "media_type": media_type, "season": season,
+            "episodes": [int(row["episode"]) for row in unresolved_rows],
+            "unresolved": len(unresolved_rows), "status": status_code,
+            "error_code": error_code, "retryable": retryable, "endpoint": endpoint,
+        },
     )
