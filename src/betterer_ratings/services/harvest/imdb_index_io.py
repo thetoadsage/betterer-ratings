@@ -162,7 +162,8 @@ def read_imdb_episode_index_batch(
     lines_read = 0
     eof_reached = False
     cycle_titles_seen: Set[str] = set()
-    max_rows = max(1, title_batch_size * 250)
+    # Episode identity lookups must not monopolize a whole harvest cycle.
+    max_rows = max(1, min(1000, title_batch_size * 250))
 
     with imdb_episode_index_path.open("r", encoding="utf-8", errors="replace") as handle:
         handle.seek(cursor_byte)

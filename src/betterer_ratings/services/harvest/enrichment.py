@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from betterer_ratings.infra.db.coverage_repo import update_coverage_gaps
+
 
 def save_candidate_enrichment(
     *,
@@ -10,6 +12,7 @@ def save_candidate_enrichment(
     details: Optional[Dict[str, Any]],
     md_item: Optional[Dict[str, Any]],
     now_ts: int,
+    mdblist_attempted: bool = True,
     parse_mdblist_ratings_fn: Callable[[Optional[Dict[str, Any]]], Dict[str, float]],
     parse_tmdb_vote_average_fn: Callable[[Optional[Dict[str, Any]]], Optional[float]],
     extract_mappings_fn: Callable[
@@ -23,11 +26,16 @@ def save_candidate_enrichment(
 
     mappings = extract_mappings_fn(candidate.media_type, details, md_item)
     imdb_id = mappings.get("imdb")
+    archive = db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "imdb")
+    archive_data = archive["payload"]
+    if (archive_data and archive["next_due"] > now_ts
+            and (not imdb_id or archive_data["imdb_id"] == imdb_id)):
+        ratings["IM"] = archive_data["score"]
 
     error_reasons = []
     if details is None:
         error_reasons.append("TMDB details failed or unavailable")
-    if md_item is None:
+    if md_item is None and mdblist_attempted:
         error_reasons.append("MDBList item missing or unavailable")
     enrichment_error = "; ".join(error_reasons) if error_reasons else None
 
@@ -44,7 +52,14 @@ def save_candidate_enrichment(
         ratings=ratings,
         mappings=mappings,
         now_ts=now_ts,
+        mdblist_attempted=mdblist_attempted,
     )
+    expected = {("rating", "TM"): "no_data" if details is not None else "provider_unavailable"}
+    if imdb_id:
+        expected[("rating", "IM")] = "no_data" if mdblist_attempted else "provider_unavailable"
+        expected[("mapping", "imdb")] = "no_data"
+    update_coverage_gaps(db.conn, tmdb_id=candidate.tmdb_id, media_type=candidate.media_type,
+                         expected=expected, now_ts=now_ts)
     mdblist_ok = 1 if md_item is not None else 0
     mdblist_miss = 1 if md_item is None else 0
     tmdb_only = 1 if (md_item is None and details is not None) else 0

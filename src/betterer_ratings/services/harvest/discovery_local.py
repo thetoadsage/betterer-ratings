@@ -20,6 +20,9 @@ async def collect_local_candidates(
     parse_int_fn: Callable[[Any], Optional[int]] = core_parse_int,
     now_epoch_fn: Callable[[], int] = core_now_epoch,
     candidate_cls: Any = Candidate,
+    provider_schedule: bool = False,
+    mdblist_pause_until: int = 0,
+    mal_enabled: bool = False,
 ) -> Tuple[List[Candidate], Dict[str, int], bool]:
     del day_key
     stats = init_local_stats_fn()
@@ -32,16 +35,18 @@ async def collect_local_candidates(
 
     if stop_event.is_set():
         return [], stats, True
-    limit = max(0, int(due_counts["total"]))
-    if limit <= 0:
-        return [], stats, False
-
-    rows = db.select_local_due_titles(
-        now_ts=now_ts,
-        ratings_ttl_seconds=ratings_ttl_seconds,
-        limit=limit,
-        failed_retry_seconds=failed_retry_seconds,
-    )
+    if provider_schedule:
+        rows = db.select_provider_due_titles(
+            now_ts=now_ts, mdblist_pause_until=mdblist_pause_until, mal_enabled=mal_enabled,
+        )
+    else:
+        limit = max(0, int(due_counts["total"]))
+        if limit <= 0:
+            return [], stats, False
+        rows = db.select_local_due_titles(
+            now_ts=now_ts, ratings_ttl_seconds=ratings_ttl_seconds, limit=limit,
+            failed_retry_seconds=failed_retry_seconds,
+        )
 
     candidates: List[Candidate] = []
     for row in rows:

@@ -3,6 +3,18 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
+from betterer_ratings.core.clock import local_day_key
+
+
+def _record_new_fields(conn: sqlite3.Connection, kind: str, count: int, now_ts: int) -> None:
+    if count <= 0:
+        return
+    for suffix in ("total", f"day:{local_day_key(now_ts)}"):
+        conn.execute("""
+            INSERT INTO state(key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=CAST(state.value AS INTEGER)+excluded.value
+        """, (f"metrics:harvest_contributed:{kind}:{suffix}", str(count)))
+
 
 def save_enriched_item(
     conn: sqlite3.Connection,
@@ -19,12 +31,15 @@ def save_enriched_item(
     now_ts: int,
     supported_pmdb_mapping_types: Sequence[str],
     clamp_0_100_fn: Callable[[Any], Optional[float]],
+    mdblist_attempted: bool = True,
     upsert_title_fn: Callable[..., None],
     upsert_rating_fn: Callable[..., bool],
     upsert_mapping_fn: Callable[..., bool],
 ) -> Tuple[int, int]:
     queued_ratings = 0
     queued_mappings = 0
+    new_ratings = 0
+    new_mappings = 0
     with conn:
         upsert_title_fn(
             tmdb_id=tmdb_id,
@@ -35,12 +50,17 @@ def save_enriched_item(
             tmdb_vote_average=tmdb_vote_average,
             now_ts=now_ts,
             error_message=enrichment_error,
+            mdblist_attempted=mdblist_attempted,
         )
 
         for label, score in ratings.items():
             safe_score = clamp_0_100_fn(score)
             if safe_score is None:
                 continue
+            first = conn.execute(
+                "SELECT 1 FROM ratings WHERE tmdb_id=? AND media_type=? AND label=?",
+                (tmdb_id, media_type, label.upper()),
+            ).fetchone() is None
             queued = upsert_rating_fn(
                 tmdb_id=tmdb_id,
                 media_type=media_type,
@@ -50,6 +70,7 @@ def save_enriched_item(
             )
             if queued:
                 queued_ratings += 1
+                new_ratings += int(first)
 
         for id_type, id_value in mappings.items():
             if not id_value:
@@ -57,6 +78,10 @@ def save_enriched_item(
             normalized_type = id_type.lower()
             if normalized_type not in supported_pmdb_mapping_types:
                 continue
+            first = conn.execute(
+                "SELECT 1 FROM mappings WHERE tmdb_id=? AND media_type=? AND id_type=?",
+                (tmdb_id, media_type, normalized_type),
+            ).fetchone() is None
             queued = upsert_mapping_fn(
                 tmdb_id=tmdb_id,
                 media_type=media_type,
@@ -66,6 +91,9 @@ def save_enriched_item(
             )
             if queued:
                 queued_mappings += 1
+                new_mappings += int(first)
+        _record_new_fields(conn, "ratings", new_ratings, now_ts)
+        _record_new_fields(conn, "mappings", new_mappings, now_ts)
     return queued_ratings, queued_mappings
 
 

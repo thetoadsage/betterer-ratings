@@ -24,6 +24,9 @@ class Candidate:
     title: str
     popularity: float
     harvest_reason: str = ""
+    archive_imdb_id: Optional[str] = None
+    archive_rating: Optional[float] = None
+    archive_votes: int = 0
 
 
 @dataclass

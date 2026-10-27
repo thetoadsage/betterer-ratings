@@ -61,6 +61,13 @@ class LocalDatabaseEnrichmentMixin:
     def title_key_set(self) -> set[Tuple[str, int]]:
         return db_harvest_repo.title_key_set(self.conn)
 
+    def get_title_mapping(self, *, tmdb_id: int, media_type: str, id_type: str) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT id_value FROM mappings WHERE tmdb_id=? AND media_type=? AND id_type=?",
+            (tmdb_id, media_type, id_type),
+        ).fetchone()
+        return str(row["id_value"]) if row else None
+
     def title_has_imdb_mapping(self, *, tmdb_id: int, media_type: str) -> bool:
         return db_harvest_repo.title_has_imdb_mapping(
             self.conn,
@@ -95,6 +102,7 @@ class LocalDatabaseEnrichmentMixin:
         tmdb_vote_average: Optional[float],
         now_ts: int,
         error_message: Optional[str],
+        mdblist_attempted: bool = True,
     ) -> None:
         upsert_title(
             self.conn,
@@ -106,6 +114,7 @@ class LocalDatabaseEnrichmentMixin:
             tmdb_vote_average=tmdb_vote_average,
             now_ts=now_ts,
             error_message=error_message,
+            mdblist_attempted=mdblist_attempted,
             normalize_imdb_title_id_fn=normalize_imdb_title_id,
         )
 
@@ -187,6 +196,7 @@ class LocalDatabaseEnrichmentMixin:
         ratings: Dict[str, float],
         mappings: Dict[str, str],
         now_ts: int,
+        mdblist_attempted: bool = True,
     ) -> Tuple[int, int]:
         return save_enriched_item(
             self.conn,
@@ -200,6 +210,7 @@ class LocalDatabaseEnrichmentMixin:
             ratings=ratings,
             mappings=mappings,
             now_ts=now_ts,
+            mdblist_attempted=mdblist_attempted,
             supported_pmdb_mapping_types=SUPPORTED_PMDB_MAPPING_TYPES,
             clamp_0_100_fn=clamp_0_100,
             upsert_title_fn=self._upsert_title,

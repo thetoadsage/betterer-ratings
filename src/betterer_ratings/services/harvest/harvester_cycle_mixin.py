@@ -29,6 +29,7 @@ class HarvesterCycleMixin:
         details: Optional[Dict[str, Any]],
         md_item: Optional[Dict[str, Any]],
         now_ts: int,
+        mdblist_attempted: bool = True,
     ) -> Tuple[int, int, int, int, int]:
         return harvest_enrichment.save_candidate_enrichment(
             db=self.db,
@@ -36,6 +37,7 @@ class HarvesterCycleMixin:
             details=details,
             md_item=md_item,
             now_ts=now_ts,
+            mdblist_attempted=mdblist_attempted,
             parse_mdblist_ratings_fn=parse_mdblist_ratings,
             parse_tmdb_vote_average_fn=parse_tmdb_vote_average,
             extract_mappings_fn=extract_mappings,
@@ -69,6 +71,9 @@ class HarvesterCycleMixin:
             parse_int_fn=parse_int,
             now_epoch_fn=now_epoch,
             candidate_cls=Candidate,
+            provider_schedule=True,
+            mdblist_pause_until=self._mdblist_daily_quota_pause_until(now_epoch()),
+            mal_enabled=False,
         )
 
     async def _collect_source_candidates(
@@ -106,6 +111,7 @@ class HarvesterCycleMixin:
             details_concurrency=self.details_concurrency,
             now_epoch_fn=now_epoch,
             logger=LOGGER,
+            refresh_seconds=self.ratings_ttl_seconds,
         )
 
     async def run(self, stop_event: asyncio.Event) -> None:

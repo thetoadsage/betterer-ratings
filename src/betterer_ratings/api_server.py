@@ -193,23 +193,29 @@ async def handle_metrics_history(request: web.Request) -> web.Response:
 
     daily: Dict[str, Dict[str, int]] = {}
     totals: Dict[str, int] = {}
+    contributed_daily: Dict[str, Dict[str, int]] = {}
+    contributed_totals: Dict[str, int] = {}
 
     for row in rows:
         key = str(row["key"])
         val = int(row["value"]) if row["value"] else 0
         parts = key.split(":")
+        if len(parts) < 4 or parts[1] not in {"pmdb_submitted", "harvest_contributed"}:
+            continue
+        target_daily = contributed_daily if parts[1] == "harvest_contributed" else daily
+        target_totals = contributed_totals if parts[1] == "harvest_contributed" else totals
 
         if "total" in parts:
             kind = parts[2] if len(parts) > 2 else "unknown"
-            totals[kind] = val
+            target_totals[kind] = val
         elif "day" in parts:
             day_idx = parts.index("day")
             if day_idx + 1 < len(parts):
                 day = parts[day_idx + 1]
                 kind = parts[2] if len(parts) > 2 else "unknown"
-                if day not in daily:
-                    daily[day] = {}
-                daily[day][kind] = val
+                if day not in target_daily:
+                    target_daily[day] = {}
+                target_daily[day][kind] = val
 
     daily_sorted = [
         {"date": d, **counts}
@@ -219,7 +225,17 @@ async def handle_metrics_history(request: web.Request) -> web.Response:
     return _json_response({
         "totals": totals,
         "daily": daily_sorted[-60:],
+        "contributed_totals": contributed_totals,
+        "contributed_daily": [
+            {"date": day, **counts} for day, counts in sorted(contributed_daily.items())
+        ][-60:],
     })
+
+
+async def handle_coverage_gaps(request: web.Request) -> web.Response:
+    from betterer_ratings.infra.db.coverage_repo import coverage_summary
+
+    return _json_response({"missing": coverage_summary(request.app["db"].conn)})
 
 
 async def handle_recent_titles(request: web.Request) -> web.Response:
@@ -287,6 +303,7 @@ def create_app(db: Any) -> web.Application:
     app.router.add_get("/api/mappings/summary", handle_mappings_summary)
     app.router.add_get("/api/episodes/summary", handle_episodes_summary)
     app.router.add_get("/api/metrics/history", handle_metrics_history)
+    app.router.add_get("/api/coverage/gaps", handle_coverage_gaps)
     app.router.add_get("/api/titles/recent", handle_recent_titles)
     app.router.add_get("/api/titles/daily", handle_submitted_titles_daily)
     app.router.add_get("/api/logs", handle_logs)

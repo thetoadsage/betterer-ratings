@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Dict, List, Set, Tuple
 
+from betterer_ratings.core.clock import now_epoch
+
 
 async def scan_imdb_archive_source(
     *,
@@ -96,7 +98,12 @@ async def scan_imdb_archive_source(
             stat["errors"] += lookup_errors
             stat["skipped"] += missing_mappings
             unique_candidates = []
+            source_at = int((source.path / "title.ratings.tsv").stat().st_mtime)
             for candidate in mapped_candidates:
+                db.save_archive_title_rating(
+                    candidate, source_at=source_at,
+                    now_ts=now_epoch(),
+                )
                 key = (candidate.media_type, candidate.tmdb_id)
                 if key in seen:
                     stat["duplicates"] += 1

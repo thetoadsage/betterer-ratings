@@ -54,6 +54,23 @@ include:
 
 MDBList batch size and daily plan quota are separate limits.
 
+## Independent enrichment refresh and coverage
+
+TMDB metadata and MDBList work keep separate persistent refresh state. An
+MDBList quota pause defers its own requests while TMDB and IMDb archive title
+ratings continue. Deferred requests do not advance the MDBList fetch timestamp.
+Successful requests use the title refresh interval; missing items use the failed
+retry interval, and transient failures retain previous data for inspection.
+Expired TMDB metadata is not reused after a failed refresh.
+
+IMDb archive scores with matching identities and snapshots less than two days
+old can fill or refresh IM ratings without consuming other providers. The
+scheduler prioritizes missing fields while reserving capacity for first-time
+enrichment. Coverage gaps distinguish unavailable providers, absent data and
+ambiguous identities, and first-contribution counters distinguish new fields
+from refreshes. The schema upgrade preserves existing caches, ledger entries,
+queue rows and submitted history from both migration-3 lineages.
+
 ## Update or Roll Back
 
 ```bash

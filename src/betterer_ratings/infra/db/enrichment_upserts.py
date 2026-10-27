@@ -16,6 +16,7 @@ def upsert_title(
     now_ts: int,
     error_message: Optional[str],
     normalize_imdb_title_id_fn: Callable[[Any], Optional[str]],
+    mdblist_attempted: bool = True,
 ) -> None:
     existing = conn.execute(
         "SELECT * FROM titles WHERE tmdb_id = ? AND media_type = ?",
@@ -25,7 +26,7 @@ def upsert_title(
 
     if existing:
         final_imdb = normalized_incoming_imdb or normalize_imdb_title_id_fn(existing["imdb_id"])
-        final_last_mdblist = now_ts
+        final_last_mdblist = now_ts if mdblist_attempted else existing["last_mdblist_fetch_at"]
 
         conn.execute(
             """
@@ -44,7 +45,7 @@ def upsert_title(
                 title,
                 final_imdb,
                 popularity,
-                tmdb_vote_average,
+                tmdb_vote_average if tmdb_vote_average is not None else existing["tmdb_vote_average"],
                 now_ts,
                 now_ts,
                 final_last_mdblist,
@@ -79,7 +80,7 @@ def upsert_title(
             tmdb_vote_average,
             now_ts,
             now_ts,
-            now_ts,
+            now_ts if mdblist_attempted else None,
             error_message,
         ),
     )
