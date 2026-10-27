@@ -165,11 +165,11 @@ def test_parse_mdblist_ratings_uses_source_specific_value_scales_without_score()
     }
 
 
-def test_parse_mdblist_ratings_low_global_score_fallback_is_normalized():
-    assert m.parse_mdblist_ratings({"score": "7"}) == {"TR": 7.0}
+def test_parse_mdblist_ratings_global_score_is_not_a_trakt_rating():
+    assert m.parse_mdblist_ratings({"score": "7"}) == {}
 
 
-def test_parse_mdblist_ratings_imdb_and_trakt_fallbacks():
+def test_parse_mdblist_ratings_imdb_without_trakt_does_not_invent_trakt():
     payload = {
         "ratings": [
             {"source": "Internet Movie Database", "value": "7.8/10"},
@@ -179,7 +179,6 @@ def test_parse_mdblist_ratings_imdb_and_trakt_fallbacks():
 
     assert m.parse_mdblist_ratings(payload) == {
         "IM": 78.0,
-        "TR": 74.0,
     }
 
 
