@@ -18,6 +18,7 @@ _SECRET_KEYS = {
     "secret",
     "clientsecret",
     "xapikey",
+    "xmalclientid",
     "cookie",
     "setcookie",
 }
@@ -25,7 +26,7 @@ _URL = re.compile(r"https?://[^\s\"'<>]+")
 _BEARER = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/%=-]+", re.IGNORECASE)
 _ASSIGNMENT = re.compile(
     r"(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization|auth|"
-    r"password|passwd|client[_-]?secret|secret|x-api-key|key)[\"']?\s*[=:]\s*)"
+    r"password|passwd|client[_-]?secret|secret|x-api-key|x-mal-client-id|key)[\"']?\s*[=:]\s*)"
     r"(?:\"[^\"]*\"|'[^']*'|[^\s&,;\)\]}]+)",
     re.IGNORECASE,
 )

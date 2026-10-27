@@ -44,14 +44,14 @@ def test_provider_context_and_event_are_stable_across_values(label, component):
 
 
 def test_stdout_and_dashboard_share_timestamp_and_redacted_exception_context():
-    credentials = {"Authorization": "Bearer header-secret", "api_key": "nested-secret"}
+    credentials = {"Authorization": "Bearer header-secret", "api_key": "nested-secret", "X-MAL-CLIENT-ID": "mal-client-secret"}
     try:
         raise ValueError(
             "GET https://user:pass@example.test/data?api_key=url-secret Bearer token-secret"
         )
     except ValueError:
         entry = record(
-            "[PMDB] Failed: password='text-secret'",
+            "[PMDB] Failed: password='text-secret' X-MAL-CLIENT-ID=mal-text-secret",
             details=[credentials],
             timestamp=0,
             event="mapping.failed",
@@ -67,13 +67,15 @@ def test_stdout_and_dashboard_share_timestamp_and_redacted_exception_context():
     assert payload["event"] == "mapping.failed"
     assert payload["code_location"].endswith(":30")
     assert "ValueError" in payload["exception"]
-    assert payload["details"] == [{"Authorization": "***", "api_key": "***"}]
+    assert payload["details"] == [{"Authorization": "***", "api_key": "***", "X-MAL-CLIENT-ID": "***"}]
     for secret in (
         "header-secret",
         "nested-secret",
         "url-secret",
         "token-secret",
         "text-secret",
+        "mal-text-secret",
+        "mal-client-secret",
         "user:pass",
     ):
         assert secret not in formatted
