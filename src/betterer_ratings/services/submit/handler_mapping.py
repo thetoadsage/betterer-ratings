@@ -105,6 +105,13 @@ async def submit_mapping(
         id_type=id_type,
         id_value=id_value,
     )
+    result_context = {
+        "entity": "mapping", "provider": "pmdb", "tmdb_id": tmdb_id,
+        "media_type": media_type, "id_type": id_type, "id_value": id_value,
+        "status": result.status_code, "error_code": result.error_code,
+        "endpoint": result.endpoint, "attempt": attempts + 1,
+        "max_attempts": max_retry_attempts,
+    }
 
     if result.success:
         db.mark_mapping_submitted(
@@ -172,6 +179,7 @@ async def submit_mapping(
                     tmdb_id,
                     id_type,
                     id_value,
+                    extra={**result_context, "event": "mapping.confirmed"},
                 )
                 return
 
@@ -198,6 +206,7 @@ async def submit_mapping(
                 tmdb_id,
                 id_type,
                 id_value,
+                extra={**result_context, "event": "mapping.failed", "reason": "max_attempts", "error": result.error_text[:500]},
             )
             return
 
@@ -221,6 +230,7 @@ async def submit_mapping(
             tmdb_id,
             id_type,
             id_value,
+            extra={**result_context, "event": "mapping.retry_scheduled", "retry_at": retry_at, "backoff_seconds": retry_delay, "error": result.error_text[:500]},
         )
         return
 
@@ -240,4 +250,5 @@ async def submit_mapping(
         id_type,
         id_value,
         result.error_text[:200],
+        extra={**result_context, "event": "mapping.failed", "reason": "non_retryable", "error": result.error_text[:500]},
     )

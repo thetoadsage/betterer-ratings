@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from betterer_ratings.config.schema import AppConfig, ensure_app_config
+from betterer_ratings.observability.redaction import redact_payload
 
 _BASE_RECORD_KEYS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
 _COMPONENT_LABELS = {
@@ -15,8 +16,14 @@ _COMPONENT_LABELS = {
     "TMDB": "tmdb",
     "MDBList": "mdblist",
     "IMDbArchive": "imdb_archive",
+    "PMDB": "pmdb",
+    "MAL": "mal",
+    "Jikan": "jikan",
+    "Fribb": "fribb",
+    "Dins": "dins",
+    "AnimeOfflineDatabase": "anime_offline_database",
 }
-_PROVIDER_COMPONENTS = {"tmdb", "mdblist", "imdb_archive"}
+_PROVIDER_COMPONENTS = set(_COMPONENT_LABELS.values()) - {"harvester", "submitter"}
 
 
 def _json_safe(value: Any) -> Any:
@@ -30,9 +37,11 @@ def _json_safe(value: Any) -> Any:
 
 
 def _event_from_message(message: str) -> str:
-    detail = message
-    if message.startswith("[") and "]" in message:
-        detail = message.split("]", 1)[1].strip()
+    # Infer from the unformatted template, so IDs/counts/errors do not create
+    # a different event name on every call. Important events use explicit extra.
+    detail = re.sub(r"%\([^)]+\)[#0+\- .\d]*[a-zA-Z]|%[#0+\- .\d]*[a-zA-Z]", "", message)
+    if detail.startswith("[") and "]" in detail:
+        detail = detail.split("]", 1)[1].strip()
     detail = detail.split(":", 1)[0].strip().rstrip(".")
     detail = re.sub(r"[^a-zA-Z0-9]+", "_", detail).strip("_").lower()
     return detail or "log"
@@ -59,17 +68,21 @@ class JsonLogFormatter(logging.Formatter):
         message = record.getMessage()
         payload: dict[str, Any] = {
             "level": record.levelname,
+            "timestamp": record.created,
             "logger": record.name,
             "message": message,
         }
-        payload.update(_context_from_message(message))
+        payload.update(_context_from_message(str(record.msg)))
         for key, value in record.__dict__.items():
             if key in _BASE_RECORD_KEYS or key.startswith("_"):
                 continue
             payload[key] = _json_safe(value)
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+            payload["code_location"] = f"{record.module}:{record.lineno}"
+        # Core envelope fields cannot be replaced by arbitrary extra values.
+        payload.update(level=record.levelname, logger=record.name, message=message, timestamp=record.created)
+        return json.dumps(redact_payload(payload), ensure_ascii=True, separators=(",", ":"))
 
 
 def configure_logging(config: AppConfig) -> None:
@@ -86,3 +99,4 @@ def configure_logging(config: AppConfig) -> None:
     root.setLevel(level)
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

@@ -3,6 +3,11 @@ services:
     build: .
     container_name: betterer-ratings
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     command: ["betterer-ratings", "--config", "/config/config.toml"]
     ports:
       - "8087:8087"

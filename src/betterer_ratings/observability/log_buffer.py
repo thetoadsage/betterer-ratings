@@ -38,7 +38,6 @@ class LogBufferHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             payload: dict[str, Any] = json.loads(self._formatter.format(record))
-            payload["timestamp"] = record.created
         except Exception:
             self.handleError(record)
             return

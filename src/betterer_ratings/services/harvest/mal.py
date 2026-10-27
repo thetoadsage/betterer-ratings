@@ -112,10 +112,23 @@ async def fetch_candidate_mal_score(
             candidates.append({"mal_id": canonical_id(value), "source": provenance})
 
     def outcome(reason: str, score: float | None = None) -> MALResult:
-        LOGGER.info(
+        if reason in {"stopped", "missing_mapping", "skipped_series_scope", "skipped_dataset_scope"}:
+            level = logging.DEBUG
+        elif reason in {"mapping_conflict", "correction_available"}:
+            level = logging.WARNING
+        else:
+            level = logging.INFO
+        LOGGER.log(
+            level,
             "[MAL] %s tmdb=%s/%s score=%s", reason, candidate.media_type,
             candidate.tmdb_id, score,
-            extra={"event": "mal.enrichment", "outcome": reason, "source": source},
+            extra={
+                "event": "mal.enrichment", "outcome": reason, "source": source,
+                "tmdb_id": candidate.tmdb_id, "media_type": candidate.media_type,
+                "mal_id": raw_id, "score": score, "identity_source": identity_source,
+                "candidates": candidates, "conflicts": conflicts,
+                "proposed_mal_id": proposed_mal_id, "mapping_decisions": mapping_decisions,
+            },
         )
         valid = reason in {"success", "missing_score"}
         return MALResult(
