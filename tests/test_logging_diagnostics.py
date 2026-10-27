@@ -207,6 +207,31 @@ def test_paused_gate_is_deferred_without_a_network_attempt(caplog):
     assert event.levelno == logging.DEBUG
 
 
+def test_long_rate_limit_is_logged_as_deferred_without_promising_a_retry(caplog):
+    async def run():
+        client = HTTPClient(5, 3, client_factory=lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(
+                429, headers={"retry-after": "600"}, json={"error": "quota"},
+            )),
+        ))
+        try:
+            return await client.request_json(method="GET", url="https://example.test/data")
+        finally:
+            await client.aclose()
+
+    with caplog.at_level(logging.DEBUG, logger="betterer-ratings"):
+        result = asyncio.run(run())
+    assert result.status == 429
+    assert result.headers["retry-after"] == "600"
+    rate_limit = next(record for record in caplog.records if getattr(record, "event", "") == "http.rate_limited")
+    assert rate_limit.retrying is False
+    assert rate_limit.backoff_seconds == 0
+    summary = caplog.records[-1]
+    assert summary.outcome == "deferred"
+    assert summary.attempts == 1
+    assert summary.request_id == rate_limit.request_id
+
+
 @pytest.mark.parametrize("kind", ["rating", "mapping"])
 @pytest.mark.parametrize(
     "retryable,attempts,expected",

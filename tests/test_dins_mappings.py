@@ -202,7 +202,7 @@ def test_title_and_archive_identity_guards(local_db, cache):
 
 def test_stored_same_ids_refresh_without_resetting_submission(local_db, cache):
     save(local_db, cache)
-    local_db.conn.execute("UPDATE mappings SET pmdb_status='submitted', pmdb_item_id='remote-id'")
+    local_db.conn.execute("UPDATE mappings SET pmdb_status='submitted', pmdb_item_id='remote-id', pmdb_item_value=id_value")
     assert save(local_db, cache, now=101)[-1] == 0
     assert {
         tuple(row)

@@ -17,6 +17,8 @@ from betterer_ratings.domain.models import APIResponse
 
 
 class HTTPClient:
+    DEFAULT_MAX_PAUSE_WAIT_SECONDS = 20
+
     def __init__(
         self,
         timeout_seconds: int,
@@ -86,7 +88,7 @@ class HTTPClient:
         headers: Optional[Dict[str, str]] = None,
         json_body: Optional[Dict[str, Any]] = None,
         gate: Optional[Any] = None,
-        max_pause_wait_seconds: Optional[int] = None,
+        max_pause_wait_seconds: Optional[int] = DEFAULT_MAX_PAUSE_WAIT_SECONDS,
         max_attempts: Optional[int] = None,
     ) -> APIResponse:
         last_response: Optional[APIResponse] = None
@@ -101,7 +103,7 @@ class HTTPClient:
             "endpoint": safe_url,
         }
         if gate is not None:
-            request_context["provider"] = str(gate.name)
+            request_context["provider"] = str(getattr(gate, "name", "http"))
 
         def completed(
             response: APIResponse, attempts: int, *, deferred: bool = False,
@@ -134,10 +136,19 @@ class HTTPClient:
             if gate is not None:
                 acquired = await gate.acquire(max_pause_wait_seconds=max_pause_wait_seconds)
                 if not acquired:
+                    pause_remaining_fn = getattr(gate, "pause_remaining", None)
+                    pause_remaining = (
+                        int(max(1, pause_remaining_fn()))
+                        if callable(pause_remaining_fn)
+                        else int(max_pause_wait_seconds or 1)
+                    )
                     return completed(APIResponse(
                         status=429,
-                        headers={},
-                        data={"error": "service paused"},
+                        headers={"retry-after": str(pause_remaining)},
+                        data={
+                            "error": "service paused",
+                            "retry_after": pause_remaining,
+                        },
                         text="service paused",
                     ), attempt, deferred=True)
 
@@ -278,24 +289,43 @@ class HTTPClient:
                 retry_after = self._parse_retry_after(response.headers.get("retry-after"), 5)
                 if gate is not None:
                     gate.pause_for(retry_after, "429 Too Many Requests")
+                retrying = attempt < attempt_limit - 1 and (max_pause_wait_seconds is None or retry_after <= max_pause_wait_seconds)
                 self._logger.warning(
                     "429 from %s %s. Retry-After=%s; retrying=%s (attempt %s/%s)",
                     method,
                     safe_url,
                     format_duration(retry_after),
-                    attempt < attempt_limit - 1,
+                    retrying,
                     attempt + 1,
                     attempt_limit,
                     extra={
                         **request_context, "event": "http.rate_limited", "status": 429,
                         "attempt": attempt + 1, "max_attempts": attempt_limit,
-                        "retrying": attempt < attempt_limit - 1,
-                        "backoff_seconds": retry_after if attempt < attempt_limit - 1 else 0,
+                        "retrying": retrying,
+                        "backoff_seconds": retry_after if retrying else 0,
                         "retry_after_seconds": retry_after,
                     },
                 )
                 if attempt == attempt_limit - 1:
                     return completed(response, attempt + 1)
+                if (
+                    max_pause_wait_seconds is not None
+                    and retry_after > max_pause_wait_seconds
+                ):
+                    self._logger.warning(
+                        "Deferring %s %s for provider Retry-After=%s",
+                        method,
+                        safe_url,
+                        format_duration(retry_after),
+                        extra={
+                            **request_context,
+                            "event": "http.rate_limit_deferred",
+                            "method": method,
+                            "endpoint": safe_url,
+                            "retry_after_seconds": retry_after,
+                        },
+                    )
+                    return completed(response, attempt + 1, deferred=True)
                 await asyncio.sleep(retry_after)
                 continue
 

@@ -96,6 +96,7 @@ def _migration_001_initial_schema(conn: sqlite3.Connection) -> None:
                 id_value TEXT NOT NULL,
                 fetched_at INTEGER NOT NULL,
                 pmdb_item_id TEXT,
+                pmdb_item_value TEXT,
                 pmdb_status TEXT NOT NULL DEFAULT 'pending',
                 pmdb_claimed_at INTEGER,
                 pmdb_submitted_at INTEGER,
@@ -328,12 +329,35 @@ def _migration_005_anime_mapping_holds(conn: sqlite3.Connection) -> None:
         """, (int(time.time()),))
 
 
+def _migration_003_mapping_item_value(conn: sqlite3.Connection) -> None:
+    with conn:
+        ensure_column(
+            conn,
+            table_name="mappings",
+            column_name="pmdb_item_value",
+            column_type="TEXT",
+        )
+
+
+def _migration_006_reconcile_enrichment_history(conn: sqlite3.Connection) -> None:
+    # Fork migration 3 and upstream migration 3 had different meanings. Preserve
+    # recorded history and install either missing schema without resetting work
+    # that has already been validated by a fork deployment.
+    _migration_003_mapping_item_value(conn)
+    enrichment_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='enrichment_state'"
+    ).fetchone() is not None
+    if not enrichment_exists:
+        _migration_003_enrichment_state(conn)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
-    (3, "enrichment_state", _migration_003_enrichment_state),
+    (3, "mapping_item_value", _migration_003_mapping_item_value),
     (4, "coverage_gaps", _migration_004_coverage_gaps),
     (5, "anime_mapping_holds", _migration_005_anime_mapping_holds),
+    (6, "reconcile_enrichment_history", _migration_006_reconcile_enrichment_history),
 )
 
 

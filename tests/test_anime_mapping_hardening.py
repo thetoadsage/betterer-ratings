@@ -67,7 +67,9 @@ def test_migration_preserves_history_and_holds_old_unsent_mal(tmp_path):
     conn = sqlite3.connect(tmp_path / 'legacy.sqlite3')
     conn.row_factory = sqlite3.Row
     conn.execute('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT,applied_at INTEGER)')
-    for version, name, migrate in MIGRATIONS[:-1]:
+    for version, name, migrate in MIGRATIONS:
+        if version >= 5:
+            break
         migrate(conn)
         conn.execute('INSERT INTO schema_migrations VALUES (?,?,1)', (version, name))
     for i, status in enumerate(['pending', 'retry', 'in_flight', 'submitted', 'failed']):

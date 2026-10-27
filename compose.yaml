@@ -1,13 +1,9 @@
 services:
   betterer-ratings:
     build: .
+    image: ${BETTERER_IMAGE:-ghcr.io/thetoadsage/betterer-ratings:latest}
     container_name: betterer-ratings
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
     command: ["betterer-ratings", "--config", "/config/config.toml"]
     ports:
       - "8087:8087"
@@ -16,3 +12,8 @@ services:
       - ${BETTERER_DATA_DB:-./data/db}:/data/db
       - ${BETTERER_DATA_IMDB:-./data/imdb}:/data/imdb
       - ${BETTERER_DATA_TEMP:-./data/temp}:/data/temp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

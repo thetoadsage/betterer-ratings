@@ -39,6 +39,19 @@ The dashboard and API are exposed on port `8087` by default:
 http://localhost:8087
 ```
 
+## Container images and health
+
+The upstream CI workflow is retained and publishes this repository’s image at
+`ghcr.io/thetoadsage/betterer-ratings` on pushes to `main`. Compose accepts
+`BETTERER_IMAGE` for a tag or immutable digest and also supports local builds.
+Confirm the GHCR package is public before relying on anonymous image pulls.
+The container health check probes the dashboard every 30 seconds.
+
+To update from a published image, run `docker compose pull` followed by
+`docker compose up -d --no-build`. To build this checkout, use
+`docker compose up -d --build`. Roll back by setting `BETTERER_IMAGE` to a
+previous published digest and recreating the service with `--no-build`.
+
 ## Runtime Model
 
 The service has one mode: start, run forever, and stop gracefully on
