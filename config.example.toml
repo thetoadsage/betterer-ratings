@@ -85,6 +85,9 @@ mappings_limit = { requests = 15, per_seconds = 1.0 }
 # Existing configs without this table leave direct fetching disabled.
 enabled = false
 client_id = "replace-me-mal-client-id"
+# Optional weekly Fribb cache: TMDB/IMDb -> MAL candidates, validated before queueing.
+# Requires mal.enabled; skips conflicting, multipart, and season-specific links.
+fribb_mappings = false
 
 # Optional self-hosted Jikan discovery and score fallback. Requires mal.enabled.
 # Both containers must share a private Docker network; the URL includes /v4.
@@ -95,3 +98,7 @@ discover_missing = true
 fallback = true
 # Incomplete searches are rejected; raising this does not extend the 25s deadline.
 max_search_pages = 4
+
+# Optional daily IMDb/TMDB/TVDB export cache. No extra API credentials needed.
+[dins]
+enabled = false

@@ -163,6 +163,30 @@ by Docker.
 Logs are structured JSON on stdout. Docker or your host logging stack should
 handle collection, retention, and rotation.
 
+## Optional Dins ID mappings
+
+Set `enabled = true` under `[dins]` to use
+[dins-mappings](https://github.com/0xConstant1/dins-mappings) as a trusted supplemental
+IMDb/TMDB/TVDB source. No additional credentials are required. Existing configurations
+without this section keep it disabled.
+
+The worker downloads both movie and TV exports daily and builds an indexed SQLite
+cache at `/data/temp/dins-mappings/index.sqlite3`. Downloads and parsing must succeed
+for both exports before the cache is replaced. Failed refreshes keep the last good
+cache and retry after an hour; without a usable cache, normal lookups continue.
+
+IMDb archive title and parent-show lookups use unambiguous cached mappings to avoid
+TMDB `/find` requests. Missing or conflicting matches fall back to the existing
+lookup flow. Title details still refresh normally; episode identities still require
+the existing exact TMDB episode lookup.
+
+During title enrichment, Dins fills missing IMDb and TVDB mappings through the normal
+submission queue. It never replaces a different source/stored ID, and skips Dins
+additions when an ID belongs to another local title. Movie and TV namespaces remain
+separate, and duplicate ownership within an export is rejected. TVmaze IDs are not
+submitted. Enabling this uses normal discovery/refresh scheduling, without a bulk
+import or historical correction pass.
+
 ## Direct MyAnimeList ratings
 
 Set `enabled = true` and `client_id = "your-client-id"` under `[mal]` to enrich
@@ -196,6 +220,93 @@ persisted service-pause handling. Each title's optional MAL fetch is bounded to
 failures; the `mal` service state records provider responses and pauses. Existing
 MDBList ratings are not retrospectively filtered by these new matching rules.
 AniList scores are not included.
+
+#### Anime identity safety and audit
+
+MAL candidates retain their source (MDBList, stored mapping, offline bridge,
+Fribb, or Jikan). Dataset decisions distinguish missing data, conflicts, unsafe
+scope, and unavailable caches. Conflicting candidate IDs block MAL contributions. If an
+existing candidate is definitively rejected, enabled Jikan discovery may suggest
+a replacement; that suggestion must pass the same identity checks and is saved
+for review only. It never replaces a stored mapping or queues a replacement score.
+Provider outages do not trigger correction searches. An official MAL 404 followed
+by a Jikan detail 404 can still trigger correction discovery with fallback enabled.
+
+New AniList and AniDB mappings from source metadata are withheld because they do
+not yet have independent provider validation. Their IDs remain available for local
+MAL discovery and conflict checks. Existing AniList/AniDB queue rows are preserved
+but cannot be claimed. Detected MAL identity failures place a submission hold on
+that title; both single and grouped claims skip held rows. The submitter rechecks
+holds before sending work claimed earlier. Holds survive provider failures and
+clear only after successful MAL identity validation. Database migration 5 holds
+legacy unsent MAL work until it is revalidated. Submitted history is preserved;
+this change does not delete or revalidate external records.
+
+Audit a consistent database backup without network requests or database writes:
+
+```bash
+PYTHONPATH=src python scripts/audit_anime_mappings.py --database /path/to/backup.sqlite3 --examples 30
+```
+
+The JSON report counts detailed cached validation outcomes, local mapping queue
+statuses, submission holds, policy versions, conflicts, correction proposals, and
+stored IDs lacking matching cached validation. Counts cover the full audit; `--examples` limits only sample details.
+Expired and missing validation records are flagged. Cached evidence is not proof
+of current provider identity or remote PMDB coverage. Detailed outcomes live in
+MAL enrichment state; the dashboard retains its broader coverage categories.
+
+#### Reviewed mapping repair
+
+`python scripts/repair_anime_mappings.py --help` describes the standalone repair
+tool for a separately reviewed, version-1 MAL correction plan. Its default preview
+uses PMDB GET requests and writes local reports without changing mappings. Applying
+requires `--apply --service-stopped`, creates a verified full database backup, and
+restricts deletions to the exact selected contributor's entries. It preserves
+ratings and submission holds. Inspect the journal after an interruption; remote
+writes are not automatically retried or rolled back. Keep correction plans,
+configuration, reports, and backups private.
+
+#### Optional direct anime mappings from Fribb
+
+Set `fribb_mappings = true` in `[mal]` to use
+[Fribb's combined anime list](https://github.com/Fribb/anime-lists) as an additional
+TMDB/IMDb-to-MAL bridge. This requires
+`mal.enabled = true` and defaults to false, including for existing configurations.
+The original AniList/AniDB-to-MAL bridge and official MAL scoring remain in use.
+
+The dataset is downloaded on first eligible use and refreshed weekly at
+`/data/temp/anime-mappings/fribb-anime-list-full.json`, under the existing persistent
+temp volume. A failed, malformed, or unusable
+refresh keeps the last good cache; download retries have a one-hour cooldown.
+Movie and TV ID namespaces remain separate. Conflicting anchors, shared anime ID
+ownership, multipart films, unknown TV season scope, non-first seasons, and episode
+offsets are skipped. TV candidates must still be ended single-season shows and
+pass all existing MAL title, format, episode-count, and date checks.
+
+Only a validated MAL identity permits a new Fribb-derived `mal` mapping into the
+existing PMDB queue. A missing MAL score still permits that mapping. Fribb's
+AniList/AniDB IDs are used for conflict detection only; MAL validation does not
+establish their identities, so they are not contributed from this dataset. Kitsu
+and Simkl IDs are also excluded. Old cached supplemental IDs are ignored.
+AniDB contributions from all sources are excluded because the live PMDB API
+rejected `id_type="anidb"` with HTTP 422 on 2026-10-07, despite listing it in its
+documentation. AniDB IDs remain available for local MAL resolution.
+Enabling or disabling the setting invalidates cached enrichment results;
+disabling it does not delete previously queued or submitted mappings.
+
+Before enabling it, inspect potential coverage from an already saved dataset:
+
+```bash
+PYTHONPATH=src python scripts/preview_fribb_mappings.py \
+  --database /data/db/betterer_ratings.sqlite3 \
+  --dataset /data/temp/anime-mappings/fribb-anime-list-full.json \
+  --limit 1000 --examples 20
+```
+
+The preview opens SQLite read-only and makes no network requests or queue writes.
+Its counts describe potential additions relative to the local database; candidates
+still require MAL validation, and existing PMDB mappings are not checked.
+AnimeAPI and the archived Trakt movie dataset are not used by this integration.
 
 ### Optional self-hosted Jikan
 

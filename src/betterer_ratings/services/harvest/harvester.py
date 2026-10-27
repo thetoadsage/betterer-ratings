@@ -23,10 +23,12 @@ from betterer_ratings.providers.tmdb_client import TMDBClient
 from betterer_ratings.services.harvest import imdb_index_io as harvest_imdb_index_io
 from betterer_ratings.services.harvest import setup as harvest_setup
 from betterer_ratings.services.harvest.anime_offline_database import AnimeOfflineDatabase
+from betterer_ratings.services.harvest.dins_mappings import DinsMappings
 from betterer_ratings.services.harvest.discovery_local import (
     mdblist_daily_quota_pause_until,
     source_scan_due,
 )
+from betterer_ratings.services.harvest.fribb_mappings import FribbAnimeMappings
 from betterer_ratings.services.harvest.harvester_cycle_mixin import HarvesterCycleMixin
 from betterer_ratings.services.harvest.harvester_imdb_map_mixin import HarvesterIMDbMapMixin
 from betterer_ratings.services.harvest.imdb_archive_refresh_refresh import (
@@ -92,6 +94,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         mal_client: MALClient | None = None,
         anime_mapping_cache: AnimeOfflineDatabase | None = None,
         jikan: JikanEnrichment | None = None,
+        fribb_mapping_cache: FribbAnimeMappings | None = None,
+        dins_mapping_cache: DinsMappings | None = None,
     ):
         self.config = config
         self.db = db
@@ -99,6 +103,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         self.mdblist_client = mdblist_client
         self.mal_client = mal_client
         self.anime_mapping_cache = anime_mapping_cache
+        self.fribb_mapping_cache = fribb_mapping_cache
+        self.dins_mapping_cache = dins_mapping_cache
         self.jikan = jikan
         harvest_setup.configure_harvester(
             harvester=self,
@@ -126,6 +132,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
 
     def close(self) -> None:
         self.imdb_cache.close()
+        if self.dins_mapping_cache is not None:
+            self.dins_mapping_cache.close()
 
     def _mdblist_daily_quota_pause_until(self, now_ts: int) -> int:
         return mdblist_daily_quota_pause_until(

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from betterer_ratings.infra.db.anime_mapping_holds import update_mal_hold
 from betterer_ratings.infra.db.coverage_repo import update_coverage_gaps
+from betterer_ratings.services.harvest.dins_mappings import DinsMappings
 from betterer_ratings.services.harvest.mal import MALResult
 
 
@@ -15,6 +17,7 @@ def save_candidate_enrichment(
     now_ts: int,
     mal_result: MALResult | None = None,
     mdblist_attempted: bool = True,
+    dins_mapping_cache: DinsMappings | None = None,
     parse_mdblist_ratings_fn: Callable[[Optional[Dict[str, Any]]], Dict[str, float]],
     parse_tmdb_vote_average_fn: Callable[[Optional[Dict[str, Any]]], Optional[float]],
     extract_mappings_fn: Callable[
@@ -29,9 +32,18 @@ def save_candidate_enrichment(
         ratings["TM"] = tm_score
 
     mappings = extract_mappings_fn(candidate.media_type, details, md_item)
+    # Supplemental IDs are candidates, not validated contributions. Keep source
+    # extraction for local MAL discovery, but require provider validation to queue.
+    mappings.pop("anilist", None)
+    mappings.pop("anidb", None)
     mappings.pop("mal", None)
     if mal_result is not None and mal_result.validated and mal_result.mal_id is not None:
         mappings["mal"] = str(mal_result.mal_id)
+    if dins_mapping_cache is not None:
+        supplements = dins_mapping_cache.supplements(
+            db=db, media_type=candidate.media_type, tmdb_id=candidate.tmdb_id, mappings=mappings,
+        )
+        mappings.update(supplements)
     imdb_id = mappings.get("imdb")
     archive = db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "imdb")
     archive_data = archive["payload"]
@@ -47,10 +59,17 @@ def save_candidate_enrichment(
         error_reasons.append("MDBList item missing or unavailable")
     enrichment_error = "; ".join(error_reasons) if error_reasons else None
 
+    # Publish a detected hold before any queue write or subsequent worker claim.
+    if mal_result is not None and not mal_result.validated:
+        update_mal_hold(db.conn, tmdb_id=candidate.tmdb_id, media_type=candidate.media_type,
+                        result=mal_result, now_ts=now_ts)
     queued_ratings, queued_mappings = db.save_enriched_item(
         tmdb_id=candidate.tmdb_id,
         media_type=candidate.media_type,
-        title=candidate.title,
+        title=(
+            str((details or {}).get("title" if candidate.media_type == "movie" else "name") or candidate.title)
+            if candidate.title == f"TMDB-{candidate.tmdb_id}" else candidate.title
+        ),
         imdb_id=imdb_id,
         popularity=candidate.popularity,
         tmdb_vote_average=(details or {}).get("vote_average")
@@ -62,6 +81,9 @@ def save_candidate_enrichment(
         now_ts=now_ts,
         mdblist_attempted=mdblist_attempted,
     )
+    if mal_result is not None and mal_result.validated:
+        update_mal_hold(db.conn, tmdb_id=candidate.tmdb_id, media_type=candidate.media_type,
+                        result=mal_result, now_ts=now_ts)
     expected: dict[tuple[str, str], str] = {}
     expected[("rating", "TM")] = "no_data" if details is not None else "provider_unavailable"
     if imdb_id:
@@ -70,7 +92,7 @@ def save_candidate_enrichment(
         )
         expected[("mapping", "imdb")] = "no_data"
     if mal_result is not None and mal_result.outcome != "not_attempted":
-        if mal_result.outcome == "ambiguous_identity":
+        if mal_result.outcome in {"ambiguous_identity", "mapping_conflict", "correction_available"}:
             missing_reason = "ambiguous_identity"
         elif mal_result.outcome in {"provider_failure", "provider_unavailable", "timeout"}:
             missing_reason = "provider_unavailable"

@@ -151,6 +151,10 @@ class RuntimeConfig:
         return package_constants.CONTAINER_ANIME_OFFLINE_DATABASE_PATH
 
     @property
+    def fribb_mappings_path(self) -> str:
+        return f"{self.temp_path}/anime-mappings/fribb-anime-list-full.json"
+
+    @property
     def temp_path(self) -> str:
         return package_constants.CONTAINER_TEMP_PATH
 
@@ -348,17 +352,23 @@ class MDBListConfig:
 class MALConfig:
     enabled: bool = False
     client_id: str = ""
+    fribb_mappings: bool = False
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "MALConfig":
-        _reject_unknown_keys(value, allowed={"enabled", "client_id"}, path="mal")
+        _reject_unknown_keys(value, allowed={"enabled", "client_id", "fribb_mappings"}, path="mal")
         enabled = value.get("enabled", False)
         if not isinstance(enabled, bool):
             raise ConfigValidationError("mal.enabled must be a boolean")
+        fribb_mappings = value.get("fribb_mappings", False)
+        if not isinstance(fribb_mappings, bool):
+            raise ConfigValidationError("mal.fribb_mappings must be a boolean")
+        if fribb_mappings and not enabled:
+            raise ConfigValidationError("mal.fribb_mappings requires mal.enabled")
         client_id = _as_str(value.get("client_id", ""), path="mal.client_id").strip()
         if enabled and (not client_id or client_id.lower().startswith("replace-me")):
             raise ConfigValidationError("mal.client_id is required when mal.enabled is true")
-        return MALConfig(enabled=enabled, client_id=client_id)
+        return MALConfig(enabled=enabled, client_id=client_id, fribb_mappings=fribb_mappings)
 
 
 @dataclass(frozen=True)
@@ -435,6 +445,19 @@ class PMDBConfig:
 
 
 @dataclass(frozen=True)
+class DinsConfig:
+    enabled: bool = False
+
+    @staticmethod
+    def from_mapping(value: Mapping[str, Any]) -> "DinsConfig":
+        _reject_unknown_keys(value, allowed={"enabled"}, path="dins")
+        enabled = value.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigValidationError("dins.enabled must be a boolean")
+        return DinsConfig(enabled=enabled)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     api_keys: APIKeysConfig
     runtime: RuntimeConfig
@@ -444,12 +467,13 @@ class AppConfig:
     pmdb: PMDBConfig
     mal: MALConfig = MALConfig()
     jikan: JikanConfig = JikanConfig()
+    dins: DinsConfig = DinsConfig()
 
     @staticmethod
     def from_mapping(value: Mapping[str, Any]) -> "AppConfig":
         _reject_unknown_keys(
             value,
-            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "mal", "jikan"},
+            allowed={"api_keys", "worker", "tmdb", "imdb", "mdblist", "pmdb", "mal", "jikan", "dins"},
             path="<root>",
         )
         api_keys = APIKeysConfig.from_mapping(
@@ -473,6 +497,7 @@ class AppConfig:
             pmdb=pmdb,
             mal=mal,
             jikan=jikan,
+            dins=DinsConfig.from_mapping(_require_mapping(value.get("dins", {}), path="dins")),
         )
 
 

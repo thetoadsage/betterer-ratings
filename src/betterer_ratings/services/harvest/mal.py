@@ -4,7 +4,7 @@ import asyncio
 import logging
 import math
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date as date_type
 from typing import Any
 
@@ -21,6 +21,10 @@ class MALResult:
     validated: bool
     outcome: str
     score: float | None = None
+    candidates: list[dict[str, str]] = field(default_factory=list)
+    proposed_mal_id: int | None = None
+    conflicts: list[dict[str, str]] = field(default_factory=list)
+    mapping_decisions: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _title(value: Any) -> str:
@@ -89,10 +93,23 @@ async def fetch_candidate_mal_score(
     *, client: Any, db: Any, candidate: Any, details: Any, md_item: Any,
     stop_event: asyncio.Event, anime_mapping_cache: Any | None = None,
     jikan: Any | None = None,
+    fribb_mapping_cache: Any | None = None,
 ) -> MALResult:
     source = "official_mal"
     identity_source: str | None = None
     raw_id: Any = None
+    candidates: list[dict[str, str]] = []
+    conflicts: list[dict[str, str]] = []
+    proposed_mal_id: int | None = None
+    mapping_decisions: list[dict[str, Any]] = []
+
+    def canonical_id(value: Any) -> str:
+        text = str(value)
+        return str(int(text)) if text.isascii() and text.isdigit() and int(text) > 0 else text
+
+    def remember(value: Any, provenance: str) -> None:
+        if value is not None:
+            candidates.append({"mal_id": canonical_id(value), "source": provenance})
 
     def outcome(reason: str, score: float | None = None) -> MALResult:
         LOGGER.info(
@@ -101,32 +118,80 @@ async def fetch_candidate_mal_score(
             extra={"event": "mal.enrichment", "outcome": reason, "source": source},
         )
         valid = reason in {"success", "missing_score"}
-        return MALResult(int(raw_id) if valid else None, identity_source, valid, reason, score)
+        return MALResult(
+            int(raw_id) if valid else None, identity_source, valid, reason, score,
+            candidates, proposed_mal_id, conflicts, mapping_decisions,
+        )
 
     if stop_event.is_set():
         return outcome("stopped")
-    mappings = extract_mappings(candidate.media_type, details, md_item)
-    raw_id = mappings.get("mal")
-    if raw_id is not None:
-        identity_source = "source_mapping"
-    if raw_id is None:
-        raw_id = db.get_title_mapping(
-            tmdb_id=candidate.tmdb_id, media_type=candidate.media_type, id_type="mal"
-        )
-        if raw_id is not None:
-            identity_source = "stored_mapping"
-    if raw_id is None and anime_mapping_cache is not None and (
-        mappings.get("anilist") is not None or mappings.get("anidb") is not None
-    ):
-        raw_id = await anime_mapping_cache.resolve(mappings)
-        if raw_id is not None:
-            identity_source = "offline_bridge"
     if not isinstance(details, dict):
         return outcome("missing_tmdb_details")
     if candidate.media_type == "tv" and (
         details.get("status") != "Ended" or details.get("number_of_seasons") != 1
     ):
         return outcome("skipped_series_scope")
+    mappings = extract_mappings(candidate.media_type, details, md_item)
+    remember(mappings.get("mal"), "source_mapping")
+    stored_mappings = {
+        provider: db.get_title_mapping(
+            tmdb_id=candidate.tmdb_id, media_type=candidate.media_type, id_type=provider
+        ) for provider in ("mal", "anilist", "anidb")
+    }
+    remember(stored_mappings["mal"], "stored_mapping")
+    # A conflicting bridge must not become evidence for either side.
+    for provider, stored in stored_mappings.items():
+        supplied = mappings.get(provider)
+        if supplied is not None and stored is not None and canonical_id(supplied) != canonical_id(stored):
+            conflicts.append({"provider": provider, "source_id": str(supplied), "stored_id": str(stored)})
+    if conflicts:
+        identity_source = "mapping_conflict"
+        return outcome("mapping_conflict")
+    known_mappings = {**mappings, **{
+        k: v for k, v in stored_mappings.items() if v is not None
+    }}
+    if anime_mapping_cache is not None and any(
+        known_mappings.get(p) is not None for p in ("anilist", "anidb")
+    ):
+        if hasattr(anime_mapping_cache, "resolve_decision"):
+            decision = await anime_mapping_cache.resolve_decision(known_mappings)
+            mapping_decisions.append({"source": "offline_bridge", **asdict(decision)})
+            for value in decision.mal_ids:
+                remember(value, "offline_bridge")
+            if decision.outcome == "conflict":
+                identity_source = "offline_bridge"
+                return outcome("mapping_conflict")
+        else:
+            remember(await anime_mapping_cache.resolve(known_mappings), "offline_bridge")
+    if fribb_mapping_cache is not None and not stop_event.is_set():
+        # Compare the dataset candidate with the selected MAL ID, rather
+        # than filtering away disagreement before we can report it.
+        anchors = {k: v for k, v in known_mappings.items() if k != "mal"}
+        if hasattr(fribb_mapping_cache, "resolve_decision"):
+            decision = await fribb_mapping_cache.resolve_decision(
+                media_type=candidate.media_type, tmdb_id=candidate.tmdb_id, mappings=anchors,
+            )
+            mapping_decisions.append({"source": "fribb_mapping", **asdict(decision)})
+            if decision.outcome == "conflict":
+                for value in decision.mal_ids:
+                    remember(value, "fribb_mapping")
+                identity_source = "fribb_mapping"
+                return outcome("mapping_conflict")
+            if decision.outcome == "unsafe_scope":
+                identity_source = "fribb_mapping"
+                return outcome("skipped_dataset_scope")
+            remember(decision.mal_id, "fribb_mapping")
+        else:
+            fribb = await fribb_mapping_cache.resolve(
+                media_type=candidate.media_type, tmdb_id=candidate.tmdb_id, mappings=anchors,
+            )
+            remember(fribb.get("mal"), "fribb_mapping")
+    if len({c["mal_id"] for c in candidates}) > 1:
+        identity_source = "mapping_conflict"
+        return outcome("mapping_conflict")
+    if candidates:
+        raw_id = candidates[0]["mal_id"]
+        identity_source = candidates[0]["source"]
     if raw_id is None and jikan is not None:
         if hasattr(jikan, "resolve_decision"):
             raw_id, discovery_outcome = await jikan.resolve_decision(candidate.media_type, details)
@@ -135,6 +200,7 @@ async def fetch_candidate_mal_score(
             discovery_outcome = "no_match"
         if discovery_outcome != "ineligible":
             identity_source = "jikan_discovery"
+            remember(raw_id, identity_source)
     if raw_id is None or stop_event.is_set():
         if stop_event.is_set():
             return outcome("stopped")
@@ -146,36 +212,57 @@ async def fetch_candidate_mal_score(
         }:
             return outcome("provider_unavailable")
         return outcome("missing_mapping")
-    if not str(raw_id).isascii() or not str(raw_id).isdigit() or int(raw_id) <= 0:
-        return outcome("invalid_mapping")
 
-    # Bound optional enrichment, including Retry-After sleeps, so failures cannot
-    # hold a whole MDBList chunk indefinitely. Cancellation remains propagated.
-    try:
-        async with asyncio.timeout(35):
-            response = await client.fetch_anime(int(raw_id))
-    except TimeoutError:
-        response = None
-    # Only unavailable/missing official results use the optional fallback. A valid
-    # official response with mismatched metadata or no score remains authoritative.
-    if jikan is not None and jikan.config.fallback and not stop_event.is_set() and (
-        response is None or response.status in {0, 404, 429} or response.status >= 500
-    ):
-        source = "jikan"
+    official_not_found = False
+
+    async def validate(value: int) -> tuple[str, float | None]:
+        nonlocal source, official_not_found
+        # Bound provider waits and propagate cancellation.
         try:
-            async with asyncio.timeout(10):
-                response = await jikan.client.fetch_anime(int(raw_id))
+            async with asyncio.timeout(35):
+                response = await client.fetch_anime(value)
         except TimeoutError:
-            return outcome("timeout")
-    if response is None:
-        return outcome("timeout")
-    if response.status != 200:
-        return outcome("not_found" if response.status == 404 else "provider_failure")
-    anime = response.data.get("data") if isinstance(response.data, dict) else None
-    if not isinstance(anime, dict) or anime.get("mal_id") != int(raw_id):
-        return outcome("invalid_response")
-    reason = eligibility_reason(candidate.media_type, details, anime)
-    if reason:
-        return outcome("skipped_" + reason)
-    score = mal_score(anime)
-    return outcome("success" if score is not None else "missing_score", score)
+            response = None
+        official_not_found = response is not None and response.status == 404
+        if jikan is not None and jikan.config.fallback and not stop_event.is_set() and (
+            response is None or response.status in {0, 404, 429} or response.status >= 500
+        ):
+            source = "jikan"
+            try:
+                async with asyncio.timeout(10):
+                    response = await jikan.client.fetch_anime(value)
+            except TimeoutError:
+                return "timeout", None
+        if response is None:
+            return "timeout", None
+        if response.status != 200:
+            return ("not_found" if response.status == 404 else "provider_failure"), None
+        anime = response.data.get("data") if isinstance(response.data, dict) else None
+        if not isinstance(anime, dict) or anime.get("mal_id") != value:
+            return "invalid_response", None
+        reason = eligibility_reason(candidate.media_type, details, anime)
+        if reason:
+            return "skipped_" + reason, None
+        score = mal_score(anime)
+        return ("success" if score is not None else "missing_score"), score
+
+    if not str(raw_id).isascii() or not str(raw_id).isdigit() or int(raw_id) <= 0:
+        reason, score = "invalid_mapping", None
+    else:
+        reason, score = await validate(int(raw_id))
+    # Only definitive identity rejection can trigger a correction proposal.
+    # Provider outages are not evidence that an existing identity is wrong.
+    if (reason in {"not_found", "invalid_mapping"} or reason.startswith("skipped_")) and (
+        jikan is not None and (source == "official_mal" or (official_not_found and reason == "not_found"))
+        and identity_source != "jikan_discovery" and not stop_event.is_set()
+    ):
+        alternative, decision = await jikan.resolve_decision(candidate.media_type, details)
+        if decision == "matched" and type(alternative) is int and alternative > 0 and str(alternative) != str(raw_id):
+            remember(alternative, "jikan_correction")
+            alternative_reason, _ = await validate(alternative)
+            if alternative_reason in {"success", "missing_score"} and not stop_event.is_set():
+                proposed_mal_id = alternative
+                return outcome("correction_available")
+    if stop_event.is_set():
+        return outcome("stopped")
+    return outcome(reason, score)

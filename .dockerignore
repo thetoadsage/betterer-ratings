@@ -20,3 +20,6 @@ config.toml
 *.db
 *.db-wal
 *.db-shm
+
+# Private project notes
+memory.md

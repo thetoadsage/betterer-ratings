@@ -23,6 +23,10 @@ async def run_cycle(
     if hasattr(self, "_pending_tmdb_export_cursors"):
         self._pending_tmdb_export_cursors = {}
 
+    dins = getattr(self, "dins_mapping_cache", None)
+    if dins is not None and not stop_event.is_set():
+        await dins.prepare()
+
     await self._run_imdb_episode_cycle(stop_event)
     if stop_event.is_set():
         logger.info("[Harvester] Stop requested during IMDb episode cycle.")

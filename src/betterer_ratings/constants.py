@@ -75,9 +75,10 @@ SUPPORTED_PMDB_MAPPING_TYPES: Tuple[str, ...] = (
     "tvdb",
     "mal",
     "anilist",
-    "anidb",
     "trakt",
 )
+# PMDB docs list AniDB, but the live API rejected id_type="anidb" with
+# HTTP 422 on 2026-10-07. Keep it for local MAL resolution, not contributions.
 
 SUPPORTED_TMDB_SOURCE_NAMES: Set[str] = {
     "movie/popular",

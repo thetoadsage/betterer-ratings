@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 from betterer_ratings.domain.models import Candidate
+from betterer_ratings.services.harvest.dins_mappings import DinsMappings
 
 
 def extract_tmdb_from_find_payload(
@@ -42,6 +43,7 @@ def resolve_imdb_to_tmdb_local(
     normalize_imdb_title_id_fn: Callable[[Any], Optional[str]],
     parse_int_fn: Callable[[Any], Optional[int]],
     candidate_cls: Any = Candidate,
+    dins_mapping_cache: DinsMappings | None = None,
 ) -> Optional[Candidate]:
     normalized_imdb = normalize_imdb_title_id_fn(imdb_id)
     normalized_media = str(media_type or "").strip().lower()
@@ -60,6 +62,20 @@ def resolve_imdb_to_tmdb_local(
         # Let the caller perform an exact remote lookup rather than selecting
         # whichever conflicting local mapping happened to be refreshed last.
         return None
+
+    dins = dins_mapping_cache.lookup(normalized_media, "imdb", normalized_imdb) if dins_mapping_cache else None
+    dins_tmdb = int(dins.tmdb_id) if dins and dins.tmdb_id else None
+    if dins_tmdb is not None:
+        if local_targets and int(local_targets[0]["tmdb_id"]) != dins_tmdb:
+            return None  # Resolve disagreement through TMDB /find.
+        conflicting = db.conn.execute(
+            """
+            SELECT imdb_id AS value FROM titles WHERE tmdb_id=? AND media_type=?
+            UNION SELECT id_value FROM mappings WHERE tmdb_id=? AND media_type=? AND id_type='imdb'
+            """, (dins_tmdb, normalized_media, dins_tmdb, normalized_media),
+        ).fetchall()
+        if any(row["value"] and normalize_imdb_title_id_fn(row["value"]) != normalized_imdb for row in conflicting):
+            return None
 
     mapping_row = db.conn.execute(
         """
@@ -117,6 +133,13 @@ def resolve_imdb_to_tmdb_local(
             ))
 
     cached = imdb_cache.get(normalized_imdb, normalized_media)
+    if dins_tmdb is not None:
+        if cached is not None and int(cached[0]) != dins_tmdb:
+            return None
+        return cast(Candidate, candidate_cls(
+            tmdb_id=dins_tmdb, media_type=normalized_media,
+            title=f"TMDB-{dins_tmdb}", popularity=0.0,
+        ))
     if cached is None:
         return None
     cached_tmdb_id, cached_title, cached_popularity = cached

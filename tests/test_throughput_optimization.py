@@ -74,6 +74,9 @@ def test_mapping_group_preflight_resolves_existing_and_posts_only_missing():
             return entry.get("id")
 
     class FakeDB:
+        def defer_held_mapping(self, row):
+            return False
+
         def __init__(self):
             self.submitted = []
 

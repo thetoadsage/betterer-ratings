@@ -310,11 +310,30 @@ def _migration_004_coverage_gaps(conn: sqlite3.Connection) -> None:
         """)
 
 
+def _migration_005_anime_mapping_holds(conn: sqlite3.Connection) -> None:
+    with conn:
+        conn.execute("""
+            CREATE TABLE anime_mapping_holds (
+                tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+                id_type TEXT NOT NULL, reason TEXT NOT NULL, updated_at INTEGER NOT NULL,
+                PRIMARY KEY (tmdb_id, media_type, id_type)
+            )
+        """)
+        # Preserve every queue row and all submitted history. Legacy unsent MAL
+        # work needs current validation before it may resume.
+        conn.execute("""
+            INSERT INTO anime_mapping_holds
+            SELECT tmdb_id, media_type, id_type, 'validation_required', ? FROM mappings
+            WHERE id_type='mal' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        """, (int(time.time()),))
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "initial_schema", _migration_001_initial_schema),
     (2, "queue_claim_indexes", _migration_002_queue_claim_indexes),
     (3, "enrichment_state", _migration_003_enrichment_state),
     (4, "coverage_gaps", _migration_004_coverage_gaps),
+    (5, "anime_mapping_holds", _migration_005_anime_mapping_holds),
 )
 
 

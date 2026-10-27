@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from typing import List, Optional, cast
 
+from betterer_ratings.infra.db.anime_mapping_holds import MAPPING_ELIGIBLE_SQL
+
 
 def claim_next_pending_rating(
     conn: sqlite3.Connection,
@@ -63,12 +65,13 @@ def claim_next_pending_mapping(
 ) -> Optional[sqlite3.Row]:
     with conn:
         row = conn.execute(
-            """
+            f"""
             WITH next_pending AS (
                 SELECT tmdb_id, media_type, id_type, id_value, pmdb_item_id, pmdb_attempts, fetched_at
                 FROM mappings INDEXED BY idx_mappings_claim_order
                 WHERE pmdb_status = 'pending'
                   AND pmdb_retry_after <= ?
+                  AND {MAPPING_ELIGIBLE_SQL}
                 ORDER BY fetched_at ASC
                 LIMIT 1
             ),
@@ -77,6 +80,7 @@ def claim_next_pending_mapping(
                 FROM mappings INDEXED BY idx_mappings_claim_order
                 WHERE pmdb_status = 'retry'
                   AND pmdb_retry_after <= ?
+                  AND {MAPPING_ELIGIBLE_SQL}
                 ORDER BY fetched_at ASC
                 LIMIT 1
             ),
@@ -116,12 +120,13 @@ def claim_next_pending_mapping_group(
     """Claim all due mappings for the oldest title in one transaction."""
     with conn:
         first_row = conn.execute(
-            """
+            f"""
             WITH next_pending AS (
                 SELECT tmdb_id, media_type, fetched_at, rowid AS row_id
                 FROM mappings INDEXED BY idx_mappings_claim_order
                 WHERE pmdb_status = 'pending'
                   AND pmdb_retry_after <= ?
+                  AND {MAPPING_ELIGIBLE_SQL}
                 ORDER BY fetched_at ASC, rowid ASC
                 LIMIT 1
             ),
@@ -130,6 +135,7 @@ def claim_next_pending_mapping_group(
                 FROM mappings INDEXED BY idx_mappings_claim_order
                 WHERE pmdb_status = 'retry'
                   AND pmdb_retry_after <= ?
+                  AND {MAPPING_ELIGIBLE_SQL}
                 ORDER BY fetched_at ASC, rowid ASC
                 LIMIT 1
             ),
@@ -149,11 +155,12 @@ def claim_next_pending_mapping_group(
             return []
 
         rows = conn.execute(
-            """
+            f"""
             SELECT tmdb_id, media_type, id_type, id_value, pmdb_item_id, pmdb_attempts
             FROM mappings
             WHERE pmdb_status IN ('pending', 'retry')
               AND pmdb_retry_after <= ?
+                  AND {MAPPING_ELIGIBLE_SQL}
               AND tmdb_id = ?
               AND media_type = ?
             ORDER BY fetched_at ASC, rowid ASC

@@ -45,10 +45,17 @@ async def run_mdblist_enrichment_phase(
         mal_update = None
         if getattr(self, "mal_client", None) is not None:
             state = self.db.get_enrichment_state(candidate.tmdb_id, candidate.media_type, "mal")
+            fribb_cache = getattr(self, "fribb_mapping_cache", None)
+            context_version = ["anime_validation_v4", bool(fribb_cache),
+                               bool(getattr(self, "anime_mapping_cache", None)),
+                               bool(getattr(self, "jikan", None))]
+            stored_anime = [self.db.get_title_mapping(
+                tmdb_id=candidate.tmdb_id, media_type=candidate.media_type, id_type=p
+            ) for p in ("anilist", "anidb")]
             context = hashlib.sha256(json.dumps(
                 [details, extract_mappings(candidate.media_type, details, mal_item), self.db.get_title_mapping(
                     tmdb_id=candidate.tmdb_id, media_type=candidate.media_type, id_type="mal"
-                )], sort_keys=True,
+                ), *stored_anime, *context_version], sort_keys=True,
             ).encode()).hexdigest()
             cached = state["payload"] or {}
             if state["next_due"] <= now_ts or cached.get("context") != context:
@@ -56,6 +63,7 @@ async def run_mdblist_enrichment_phase(
                     client=self.mal_client, db=self.db, candidate=candidate,
                     details=details, md_item=mal_item, stop_event=stop_event,
                     anime_mapping_cache=getattr(self, "anime_mapping_cache", None),
+                    fribb_mapping_cache=fribb_cache,
                     jikan=getattr(self, "jikan", None),
                 )
                 if stop_event.is_set():
@@ -63,13 +71,15 @@ async def run_mdblist_enrichment_phase(
                 if mal_result.validated and mal_result.mal_id is not None:
                     context = hashlib.sha256(json.dumps(
                         [details, extract_mappings(candidate.media_type, details, mal_item),
-                         str(mal_result.mal_id)], sort_keys=True,
+                         str(mal_result.mal_id), *stored_anime, *context_version], sort_keys=True,
                     ).encode()).hexdigest()
-                mal_update = {"result": vars(mal_result), "context": context}
+                mal_update = {"result": vars(mal_result), "context": context, "policy": "anime_validation_v4"}
             else:
                 data = cached.get("result")
                 if isinstance(data, dict):
-                    mal_result = MALResult(**data)
+                    # Old Fribb results inherited unvalidated AniList/AniDB IDs.
+                    # Keep the validated MAL identity, never replay the supplement.
+                    mal_result = MALResult(**{k: v for k, v in data.items() if k != "anime_mappings"})
                 elif cached.get("score") is not None:
                     mal_result = MALResult(None, None, False, "legacy_score", cached["score"])
         _, _, _, queued_r, queued_m = self._save_candidate_enrichment(

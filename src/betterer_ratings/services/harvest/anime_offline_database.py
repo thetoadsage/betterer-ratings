@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from betterer_ratings.services.harvest.anime_mapping_decision import AnimeMappingDecision
+
 LOGGER = logging.getLogger("betterer-ratings")
 
 DATASET_URL = (
@@ -56,29 +58,38 @@ def build_mal_lookup(lines: Iterable[str]) -> dict[tuple[str, str], frozenset[st
             if (identity := _source_id(source)) is not None
         }
         mal_ids = {value for provider, value in identities if provider == "mal"}
-        if len(mal_ids) != 1:
+        if not mal_ids:
             continue
-        mal_id = mal_ids.pop()
         for provider, value in identities:
             if provider in {"anilist", "anidb"}:
-                mutable_lookup.setdefault((provider, value), set()).add(mal_id)
+                mutable_lookup.setdefault((provider, value), set()).update(mal_ids)
     return {key: frozenset(values) for key, values in mutable_lookup.items()}
 
 
-def resolve_mal_id(
+def resolve_mal_decision(
     mappings: Mapping[str, object], lookup: Mapping[tuple[str, str], frozenset[str]],
-) -> str | None:
-    """Return a MAL ID only when every supplied provider mapping agrees."""
+) -> AnimeMappingDecision:
     resolved: set[str] = set()
+    evidence: list[dict[str, str]] = []
     for provider in ("anilist", "anidb"):
         raw_id = mappings.get(provider)
         value = str(raw_id) if raw_id is not None else ""
         if not value.isascii() or not value.isdigit() or int(value) <= 0:
             continue
-        mapped = lookup.get((provider, str(int(value))))
-        if mapped is not None:
-            resolved.update(mapped)
-    return resolved.pop() if len(resolved) == 1 else None
+        mapped = lookup.get((provider, str(int(value))), frozenset())
+        resolved.update(mapped)
+        evidence.extend({"provider": provider, "id_value": value, "mal_id": mal_id}
+                        for mal_id in sorted(mapped))
+    return AnimeMappingDecision(
+        "conflict" if len(resolved) > 1 else "matched" if resolved else "missing",
+        tuple(sorted(resolved)), evidence,
+    )
+
+
+def resolve_mal_id(
+    mappings: Mapping[str, object], lookup: Mapping[tuple[str, str], frozenset[str]],
+) -> str | None:
+    return resolve_mal_decision(mappings, lookup).mal_id
 
 
 class AnimeOfflineDatabase:
@@ -100,8 +111,13 @@ class AnimeOfflineDatabase:
         self._lock = asyncio.Lock()
 
     async def resolve(self, mappings: Mapping[str, object]) -> str | None:
+        return (await self.resolve_decision(mappings)).mal_id
+
+    async def resolve_decision(self, mappings: Mapping[str, object]) -> AnimeMappingDecision:
         await self._ensure_loaded()
-        return resolve_mal_id(mappings, self._lookup or {})
+        if self._lookup is None:
+            return AnimeMappingDecision("unavailable")
+        return resolve_mal_decision(mappings, self._lookup)
 
     def _is_stale(self) -> bool:
         try:

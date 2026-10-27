@@ -13,6 +13,8 @@ from betterer_ratings.providers.mdblist_client import MDBListClient
 from betterer_ratings.providers.pmdb_client import PMDBClient
 from betterer_ratings.providers.tmdb_client import TMDBClient
 from betterer_ratings.services.harvest.anime_offline_database import AnimeOfflineDatabase
+from betterer_ratings.services.harvest.dins_mappings import DinsMappings
+from betterer_ratings.services.harvest.fribb_mappings import FribbAnimeMappings
 from betterer_ratings.services.harvest.harvester import Harvester
 from betterer_ratings.services.harvest.jikan import JikanEnrichment
 from betterer_ratings.services.submit.submitter import Submitter
@@ -36,6 +38,8 @@ class AppContainer:
     mal_client: MALClient | None = None
     anime_mapping_cache: AnimeOfflineDatabase | None = None
     jikan: JikanEnrichment | None = None
+    fribb_mapping_cache: FribbAnimeMappings | None = None
+    dins_mapping_cache: DinsMappings | None = None
 
 
 def build_container(*, config: AppConfig) -> AppContainer:
@@ -114,6 +118,7 @@ def build_container(*, config: AppConfig) -> AppContainer:
 
     mal_client = None
     anime_mapping_cache = None
+    fribb_mapping_cache = None
     if app_config.mal.enabled:
         mal_gate = ServiceGate(
             "mal", db, AsyncWindowLimiter(max_requests=1, period_seconds=1.1, name="mal")
@@ -122,6 +127,10 @@ def build_container(*, config: AppConfig) -> AppContainer:
         anime_mapping_cache = AnimeOfflineDatabase(
             Path(app_config.runtime.anime_offline_database_path).expanduser()
         )
+        if app_config.mal.fribb_mappings:
+            fribb_mapping_cache = FribbAnimeMappings(
+                Path(app_config.runtime.fribb_mappings_path).expanduser()
+            )
 
     jikan = None
     if app_config.jikan.enabled:
@@ -132,6 +141,11 @@ def build_container(*, config: AppConfig) -> AppContainer:
             cache_dir=Path(app_config.runtime.temp_path) / "jikan-discovery",
         )
 
+    dins_mapping_cache = (
+        DinsMappings(Path(app_config.runtime.temp_path) / "dins-mappings/index.sqlite3")
+        if app_config.dins.enabled else None
+    )
+
     harvester = Harvester(
         config=app_config,
         db=db,
@@ -139,6 +153,8 @@ def build_container(*, config: AppConfig) -> AppContainer:
         mdblist_client=mdblist_client,
         mal_client=mal_client,
         anime_mapping_cache=anime_mapping_cache,
+        fribb_mapping_cache=fribb_mapping_cache,
+        dins_mapping_cache=dins_mapping_cache,
         jikan=jikan,
     )
     submitter = Submitter(
@@ -160,6 +176,8 @@ def build_container(*, config: AppConfig) -> AppContainer:
         mdblist_client=mdblist_client,
         mal_client=mal_client,
         anime_mapping_cache=anime_mapping_cache,
+        fribb_mapping_cache=fribb_mapping_cache,
+        dins_mapping_cache=dins_mapping_cache,
         jikan=jikan,
         pmdb_client=pmdb_client,
         harvester=harvester,

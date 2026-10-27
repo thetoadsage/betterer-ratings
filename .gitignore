@@ -29,3 +29,6 @@ imdb/
 # Local docs + reference workspace
 /docs/
 tmp/
+
+# Private project notes
+memory.md

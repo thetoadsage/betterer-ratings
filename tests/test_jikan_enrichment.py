@@ -131,8 +131,8 @@ def test_fallback_revalidates_details(local_db, tmp_path, anime):
     service.client.search.assert_not_awaited()
 
 
-def test_valid_official_mismatch_does_not_use_jikan(local_db, tmp_path):
-    service = enrichment(tmp_path, [])
+def test_official_mismatch_searches_for_correction_without_using_detail_fallback(local_db, tmp_path):
+    service = enrichment(tmp_path, [page([])])
     official = SimpleNamespace(fetch_anime=AsyncMock(return_value=response({"data": {**ANIME, "title": "Other"}})))
     assert asyncio.run(fetch_candidate_mal_score(
         client=official, db=local_db, candidate=Candidate(1, "movie", "Example", 1),
