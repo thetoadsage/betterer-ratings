@@ -108,6 +108,31 @@ def test_config_opt_in_and_validation(base_valid_config):
             MALConfig.from_mapping(value)
 
 
+def test_initial_refresh_does_not_depend_on_machine_uptime(tmp_path, monkeypatch):
+    import betterer_ratings.services.harvest.anime_offline_database as offline
+
+    path = tmp_path / "dataset.jsonl"
+    path.write_text('{"sources":["https://anilist.co/anime/10","https://myanimelist.net/anime/30"]}\n')
+    old = time.time() - 8 * 86400
+    os.utime(path, (old, old))
+    cache = AnimeOfflineDatabase(path)
+    cache._download_refresh = AsyncMock(side_effect=httpx.ConnectError("fixture offline"))
+    clock = [10.0]
+    monkeypatch.setattr(offline.time, "monotonic", lambda: clock[0])
+
+    async def run():
+        assert await cache.resolve({"anilist": "10"}) == "30"
+        assert cache._download_refresh.await_count == 1
+        clock[0] += 1
+        assert await cache.resolve({"anilist": "10"}) == "30"
+        assert cache._download_refresh.await_count == 1
+        clock[0] += offline.RETRY_SECONDS
+        assert await cache.resolve({"anilist": "10"}) == "30"
+        assert cache._download_refresh.await_count == 2
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("score,votes,expected", [
     (8.67, 100, 86.7), (10, 1, 100), (None, 1, None), (0, 100, None),
     (11, 1, None), (float("nan"), 1, None), (float("inf"), 1, None),
