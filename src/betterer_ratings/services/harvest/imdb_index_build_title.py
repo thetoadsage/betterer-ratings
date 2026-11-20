@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, cast
+
+from betterer_ratings.services.harvest.imdb_index_io import atomic_index_writer
 
 
 def build_imdb_fingerprint(
@@ -40,18 +43,16 @@ def build_imdb_fingerprint(
 
 def rebuild_imdb_index(
     *,
-    harvester: Any,
+    index_path: Path,
     source: Any,
     ratings_path: Path,
     basics_path: Path,
-    fingerprint: str,
     parse_int_fn: Callable[[Any], Optional[int]],
     is_valid_imdb_title_id_fn: Callable[[str], bool],
     imdb_title_type_to_media_type_fn: Callable[[str], Optional[str]],
     now_epoch_fn: Callable[[], int],
     logger: Any,
 ) -> int:
-    self = harvester
     started_at = now_epoch_fn()
     allowed_types = {str(x or "").strip().lower() for x in source.types}
     allowed_media_by_imdb: Dict[str, str] = {}
@@ -119,35 +120,32 @@ def rebuild_imdb_index(
             ranked.append((votes, imdb_id, media_type, average_rating))
 
     ranked.sort(key=lambda item: (-item[0], item[1]))
-    with self._imdb_index_path.open("w", encoding="utf-8") as handle:
+    with atomic_index_writer(index_path) as handle:
         for votes, imdb_id, media_type, average_rating in ranked:
             avg_text = "" if average_rating is None else f"{average_rating:.1f}"
             handle.write(f"{imdb_id}\t{media_type}\t{votes}\t{avg_text}\n")
 
     total = len(ranked)
-    self.db.set_state(self._imdb_fingerprint_key, fingerprint)
-    self.db.set_state(self._imdb_total_key, total)
-    self._reset_imdb_cursor(exhausted=(total == 0))
     elapsed = max(1, now_epoch_fn() - started_at)
     logger.info(
         "[IMDbArchive] Rebuilt ranked index: total=%s path=%s (%.1f items/s)",
         total,
-        self._imdb_index_path,
+        index_path,
         total / elapsed if elapsed > 0 else 0.0,
     )
     return total
 
 
-def ensure_imdb_index(
+async def ensure_imdb_index(
     *,
     harvester: Any,
     source: Any,
-    refresh_imdb_archives_if_due_fn: Callable[[Any], None],
+    refresh_imdb_archives_if_due_fn: Callable[[Any], Awaitable[None]],
     build_imdb_fingerprint_fn: Callable[[Any], Tuple[str, Path, Path]],
     rebuild_imdb_index_fn: Callable[..., int],
 ) -> int:
     self = harvester
-    refresh_imdb_archives_if_due_fn(source)
+    await refresh_imdb_archives_if_due_fn(source)
     fingerprint, ratings_path, basics_path = build_imdb_fingerprint_fn(source)
     existing_fingerprint = self.db.get_state(self._imdb_fingerprint_key)
     existing_total = cast(int, max(0, self.db.get_state_int(self._imdb_total_key, 0)))
@@ -157,9 +155,14 @@ def ensure_imdb_index(
         and existing_total >= 0
     ):
         return existing_total
-    return rebuild_imdb_index_fn(
+    total = await asyncio.to_thread(
+        rebuild_imdb_index_fn,
+        index_path=self._imdb_index_path,
         source=source,
         ratings_path=ratings_path,
         basics_path=basics_path,
-        fingerprint=fingerprint,
     )
+    self._reset_imdb_cursor(exhausted=(total == 0))
+    self.db.set_state(self._imdb_total_key, total)
+    self.db.set_state(self._imdb_fingerprint_key, fingerprint)
+    return total

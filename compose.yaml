@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     command: ["betterer-ratings", "--config", "/config/config.toml"]
     ports:
-      - "8087:8087"
+      - "${BETTERER_DASHBOARD_BIND:-127.0.0.1}:8087:8087"
     volumes:
       - ./config.toml:/config/config.toml:ro
       - ${BETTERER_DATA_DB:-./data/db}:/data/db

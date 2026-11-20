@@ -54,12 +54,15 @@ async def run_imdb_episode_cycle(
                 self._episode_idle_last_log_ts = now_ts
 
     try:
-        self._ensure_imdb_episode_index(source)
+        await self._ensure_imdb_episode_index(source)
     except Exception as exc:
         logger.warning("[IMDbArchive] episode index unavailable: %s", exc)
         stats["lookup_errors"] = 1
         queue_counts = self.db.queue_counts()
         stats["queue_total"] = int(queue_counts["episode_ratings_pending"])
+        return stats
+
+    if stop_event.is_set():
         return stats
 
     (

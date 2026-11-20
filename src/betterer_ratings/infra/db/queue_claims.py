@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import List, Optional, cast
+from typing import Any, List, Optional, cast
+from uuid import uuid4
 
 from betterer_ratings.infra.db.anime_mapping_holds import MAPPING_ELIGIBLE_SQL
+
+
+def claim_token_for(row: Any) -> str | None:
+    token = row["pmdb_claim_token"] if "pmdb_claim_token" in row.keys() else None
+    return str(token) if token is not None else None
 
 
 def claim_next_pending_rating(
@@ -12,6 +18,7 @@ def claim_next_pending_rating(
     now_ts: int,
 ) -> Optional[sqlite3.Row]:
     with conn:
+        claim_token = uuid4().hex
         row = conn.execute(
             """
             WITH next_pending AS (
@@ -35,12 +42,12 @@ def claim_next_pending_rating(
                 UNION ALL
                 SELECT * FROM next_retry
             )
-            SELECT tmdb_id, media_type, label, score, pmdb_item_id, pmdb_attempts
+            SELECT tmdb_id, media_type, label, score, pmdb_item_id, pmdb_attempts, ? AS pmdb_claim_token
             FROM next_row
             ORDER BY fetched_at ASC
             LIMIT 1
             """,
-            (int(now_ts), int(now_ts)),
+            (int(now_ts), int(now_ts), claim_token),
         ).fetchone()
 
         if row is None:
@@ -50,10 +57,12 @@ def claim_next_pending_rating(
             """
             UPDATE ratings
             SET pmdb_status = 'in_flight',
-                pmdb_claimed_at = ?
+                pmdb_claimed_at = ?,
+                pmdb_claim_token = ?,
+                pmdb_claim_changed = 0
             WHERE tmdb_id = ? AND media_type = ? AND label = ?
             """,
-            (now_ts, row["tmdb_id"], row["media_type"], row["label"]),
+            (now_ts, claim_token, row["tmdb_id"], row["media_type"], row["label"]),
         )
         return cast(sqlite3.Row, row)
 
@@ -64,6 +73,7 @@ def claim_next_pending_mapping(
     now_ts: int,
 ) -> Optional[sqlite3.Row]:
     with conn:
+        claim_token = uuid4().hex
         row = conn.execute(
             f"""
             WITH next_pending AS (
@@ -89,12 +99,12 @@ def claim_next_pending_mapping(
                 UNION ALL
                 SELECT * FROM next_retry
             )
-            SELECT tmdb_id, media_type, id_type, id_value, pmdb_item_id, pmdb_attempts
+            SELECT tmdb_id, media_type, id_type, id_value, pmdb_item_id, pmdb_attempts, ? AS pmdb_claim_token
             FROM next_row
             ORDER BY fetched_at ASC
             LIMIT 1
             """,
-            (int(now_ts), int(now_ts)),
+            (int(now_ts), int(now_ts), claim_token),
         ).fetchone()
 
         if row is None:
@@ -104,10 +114,12 @@ def claim_next_pending_mapping(
             """
             UPDATE mappings
             SET pmdb_status = 'in_flight',
-                pmdb_claimed_at = ?
+                pmdb_claimed_at = ?,
+                pmdb_claim_token = ?,
+                pmdb_claim_changed = 0
             WHERE tmdb_id = ? AND media_type = ? AND id_type = ?
             """,
-            (now_ts, row["tmdb_id"], row["media_type"], row["id_type"]),
+            (now_ts, claim_token, row["tmdb_id"], row["media_type"], row["id_type"]),
         )
         return cast(sqlite3.Row, row)
 
@@ -154,9 +166,10 @@ def claim_next_pending_mapping_group(
         if first_row is None:
             return []
 
+        claim_token = uuid4().hex
         rows = conn.execute(
             f"""
-            SELECT tmdb_id, media_type, id_type, id_value, pmdb_item_id, pmdb_attempts
+            SELECT tmdb_id, media_type, id_type, id_value, pmdb_item_id, pmdb_attempts, ? AS pmdb_claim_token
             FROM mappings
             WHERE pmdb_status IN ('pending', 'retry')
               AND pmdb_retry_after <= ?
@@ -165,7 +178,7 @@ def claim_next_pending_mapping_group(
               AND media_type = ?
             ORDER BY fetched_at ASC, rowid ASC
             """,
-            (int(now_ts), int(first_row["tmdb_id"]), str(first_row["media_type"])),
+            (claim_token, int(now_ts), int(first_row["tmdb_id"]), str(first_row["media_type"])),
         ).fetchall()
         if not rows:
             return []
@@ -174,12 +187,15 @@ def claim_next_pending_mapping_group(
             """
             UPDATE mappings
             SET pmdb_status = 'in_flight',
-                pmdb_claimed_at = ?
+                pmdb_claimed_at = ?,
+                pmdb_claim_token = ?,
+                pmdb_claim_changed = 0
             WHERE tmdb_id = ? AND media_type = ? AND id_type = ?
             """,
             [
                 (
                     int(now_ts),
+                    claim_token,
                     int(row["tmdb_id"]),
                     str(row["media_type"]),
                     str(row["id_type"]),
@@ -234,6 +250,7 @@ def claim_next_pending_episode_ratings_batch(
         tmdb_id = int(first_row["tmdb_id"])
         media_type = str(first_row["media_type"])
         season = int(first_row["season"])
+        claim_token = uuid4().hex
         rows = conn.execute(
             """
             SELECT
@@ -244,7 +261,8 @@ def claim_next_pending_episode_ratings_batch(
                 label,
                 score,
                 pmdb_item_id,
-                pmdb_attempts
+                pmdb_attempts,
+                ? AS pmdb_claim_token
             FROM episode_ratings
             WHERE pmdb_status IN ('pending', 'retry')
               AND pmdb_retry_after <= ?
@@ -255,6 +273,7 @@ def claim_next_pending_episode_ratings_batch(
             LIMIT ?
             """,
             (
+                claim_token,
                 int(now_ts),
                 tmdb_id,
                 media_type,
@@ -269,7 +288,9 @@ def claim_next_pending_episode_ratings_batch(
             """
             UPDATE episode_ratings
             SET pmdb_status = 'in_flight',
-                pmdb_claimed_at = ?
+                pmdb_claimed_at = ?,
+                pmdb_claim_token = ?,
+                pmdb_claim_changed = 0
             WHERE tmdb_id = ?
               AND media_type = ?
               AND season = ?
@@ -279,6 +300,7 @@ def claim_next_pending_episode_ratings_batch(
             [
                 (
                     int(now_ts),
+                    claim_token,
                     int(row["tmdb_id"]),
                     str(row["media_type"]),
                     int(row["season"]),

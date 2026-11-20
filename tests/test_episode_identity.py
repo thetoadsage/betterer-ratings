@@ -114,7 +114,7 @@ def test_episode_cycle_queues_only_verified_coordinates_and_preserves_retry_curs
         db=local_db, imdb_archive_source=object(), imdb_episodes_enabled=True,
         _imdb_episode_exhausted_key="exhausted", _imdb_episode_last_full_scan_key="last",
         episode_ratings_ttl_seconds=86400, details_concurrency=2, tmdb_client=client,
-        _ensure_imdb_episode_index=Mock(),
+        _ensure_imdb_episode_index=AsyncMock(),
         _read_imdb_episode_index_batch=Mock(return_value=([ENTRY], 1, 50, True)),
         _map_imdb_episode_parents_to_tmdb=AsyncMock(return_value=({"tt0010": Candidate(10,"tv","Show",0)},0,0)),
         _commit_imdb_episode_cursor=Mock(),

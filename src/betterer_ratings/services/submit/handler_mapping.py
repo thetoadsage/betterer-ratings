@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Optional, Sequence, Set
 
 from betterer_ratings.core.clock import format_duration
+from betterer_ratings.infra.db.queue_claims import claim_token_for
 
 
 async def submit_mapping_group(
@@ -53,7 +54,7 @@ async def submit_mapping_group(
                     None,
                 )
                 if cached_entry is None:
-                    db.clear_mapping_pmdb_item_id(tmdb_id, media_type, id_type)
+                    db.clear_mapping_pmdb_item_id(tmdb_id, media_type, id_type, claim_token=claim_token_for(row))
                     untrusted_cached_types.add(id_type)
                     continue
                 matching_entry = (
@@ -78,6 +79,8 @@ async def submit_mapping_group(
                 id_type,
                 submitted_at,
                 pmdb_item_id=cached_item_id,
+                claim_token=claim_token_for(row),
+                submitted_value=id_value,
             )
             unresolved.remove(row)
             resolved_count += 1
@@ -185,7 +188,7 @@ async def submit_mapping(
     }
 
     if result.stale_cached_item_id and pmdb_item_id:
-        db.clear_mapping_pmdb_item_id(tmdb_id, media_type, id_type)
+        db.clear_mapping_pmdb_item_id(tmdb_id, media_type, id_type, claim_token=claim_token_for(row))
         logger.info(
             "[Submitter] Mapping cache invalidated before replacement: %s %s %s",
             media_type,
@@ -208,6 +211,8 @@ async def submit_mapping(
             id_type,
             now_epoch_fn(),
             pmdb_item_id=result.item_id,
+            claim_token=claim_token_for(row),
+            submitted_value=id_value,
         )
         if result.duplicate_or_exists:
             logger.info(
@@ -260,6 +265,8 @@ async def submit_mapping(
                     id_type,
                     now_epoch_fn(),
                     pmdb_item_id=pmdb_item_id,
+                    claim_token=claim_token_for(row),
+                    submitted_value=id_value,
                 )
                 logger.info(
                     "[Submitter] Mapping confirmed remote after transient failure: %s %s %s=%s",
@@ -286,6 +293,7 @@ async def submit_mapping(
                         f"for mapping submission."
                     ),
                 ),
+                claim_token=claim_token_for(row),
             )
             logger.error(
                 "[Submitter] Mapping failed permanently after max attempts (%s): %s %s %s=%s",
@@ -310,6 +318,7 @@ async def submit_mapping(
             id_type,
             retry_at,
             error_payload,
+            claim_token=claim_token_for(row),
         )
         logger.warning(
             "[Submitter] Mapping retry scheduled in %s: %s %s %s=%s",
@@ -330,6 +339,7 @@ async def submit_mapping(
             endpoint_hint="/api/external/mappings",
             result=result,
         ),
+        claim_token=claim_token_for(row),
     )
     logger.error(
         "[Submitter] Mapping failed permanently: %s %s %s=%s (%s)",

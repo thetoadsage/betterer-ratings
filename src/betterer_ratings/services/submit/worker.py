@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Sequence
 
+from betterer_ratings.infra.db.queue_claims import claim_token_for
+
 QUEUE_KINDS = ("mapping", "rating", "episode_ratings")
 
 
@@ -34,6 +36,7 @@ async def worker_loop(
     submit_mapping_group_fn: Any,
     submit_rating_fn: Any,
     submit_episode_ratings_batch_fn: Any,
+    active_claims: set[str],
     episode_batch_size: int = 50,
     queue_order: Sequence[str] = QUEUE_KINDS,
 ) -> None:
@@ -43,26 +46,38 @@ async def worker_loop(
         now_ts = now_epoch_fn()
         for kind in queue_order:
             if kind == "mapping":
-                mapping_rows = db.claim_next_pending_mapping_group(now_ts)
-                if mapping_rows:
-                    did_work = True
-                    await submit_mapping_group_fn(mapping_rows)
-                    break
+                rows = db.claim_next_pending_mapping_group(now_ts)
+                if not rows:
+                    continue
+                claim = rows[0]
+                submission = submit_mapping_group_fn(rows)
             elif kind == "rating":
-                rating_row = db.claim_next_pending_rating(now_ts)
-                if rating_row is not None:
-                    did_work = True
-                    await submit_rating_fn(rating_row)
-                    break
+                claim = db.claim_next_pending_rating(now_ts)
+                if claim is None:
+                    continue
+                submission = submit_rating_fn(claim)
             elif kind == "episode_ratings":
-                episode_rows = db.claim_next_pending_episode_ratings_batch(
+                rows = db.claim_next_pending_episode_ratings_batch(
                     now_ts=now_ts,
                     batch_size=episode_batch_size,
                 )
-                if episode_rows:
-                    did_work = True
-                    await submit_episode_ratings_batch_fn(episode_rows)
-                    break
+                if not rows:
+                    continue
+                claim = rows[0]
+                submission = submit_episode_ratings_batch_fn(rows)
+            else:
+                continue
+
+            did_work = True
+            token = claim_token_for(claim)
+            if token is not None:
+                active_claims.add(token)
+            try:
+                await submission
+            finally:
+                if token is not None:
+                    active_claims.discard(token)
+            break
 
         if not did_work:
             try:

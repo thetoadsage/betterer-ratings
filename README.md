@@ -39,6 +39,11 @@ The dashboard and API are exposed on port `8087` by default:
 http://localhost:8087
 ```
 
+Compose binds the dashboard to the Docker host's loopback interface. For an
+authenticated reverse proxy on the same Docker network, point it at
+`betterer-ratings:8087`. To publish the unauthenticated dashboard on a different
+host interface, set `BETTERER_DASHBOARD_BIND` to that interface's IP address.
+
 The schema upgrade supports both existing migration-3 histories. Already
 validated fork queues and caches are retained; legacy unsent episode and Trakt
 work from older upstream releases is held once for source/identity verification.
@@ -171,6 +176,9 @@ Default behavior:
 python3 -m pip install -e ".[dev]"
 betterer-ratings --config config.toml
 ```
+
+The standalone worker listens on loopback by default. Set
+`BETTERER_DASHBOARD_HOST` to change the application's listening address.
 
 The CLI intentionally has no subcommands. It is the same worker entry point used
 by Docker.

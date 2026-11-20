@@ -31,13 +31,13 @@ class _DB:
     def mark_episode_rating_submitted(self, *args, **kwargs):
         self.submitted.append((args, kwargs))
 
-    def mark_episode_rating_retry(self, *args):
+    def mark_episode_rating_retry(self, *args, **_claim):
         self.retried.append(args)
 
-    def mark_episode_rating_failed(self, *args):
+    def mark_episode_rating_failed(self, *args, **_claim):
         self.failed.append(args)
 
-    def clear_episode_rating_pmdb_item_id(self, *args):
+    def clear_episode_rating_pmdb_item_id(self, *args, **_claim):
         self.cleared.append(args)
 
 

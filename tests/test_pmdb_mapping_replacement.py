@@ -153,11 +153,12 @@ class _HandlerDB:
         self.cleared: list[tuple] = []
         self.submitted: list[tuple] = []
 
-    def clear_mapping_pmdb_item_id(self, tmdb_id, media_type, id_type):
+    def clear_mapping_pmdb_item_id(self, tmdb_id, media_type, id_type, **_claim):
         self.cleared.append((tmdb_id, media_type, id_type))
 
     def mark_mapping_submitted(
-        self, tmdb_id, media_type, id_type, submitted_at, pmdb_item_id=None
+        self, tmdb_id, media_type, id_type, submitted_at, pmdb_item_id=None,
+        **_claim,
     ):
         self.submitted.append((tmdb_id, media_type, id_type, submitted_at, pmdb_item_id))
 

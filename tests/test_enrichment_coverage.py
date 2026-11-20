@@ -236,7 +236,7 @@ def test_archive_scan_updates_existing_and_duplicate_titles_before_cursor(tmp_pa
     asyncio.run(scan_imdb_archive_source(
         stop_event=asyncio.Event(), db=local_db, imdb_archive_source=source,
         source_stats=stats, candidates=candidates, seen={("movie", 10)},
-        ensure_imdb_index_fn=lambda source: 1,
+        ensure_imdb_index_fn=AsyncMock(return_value=1),
         read_imdb_index_batch_fn=lambda source: ([object()], 1, 40, True),
         commit_imdb_cursor_fn=lambda **kw: committed.append(kw),
         map_imdb_candidates_to_tmdb_fn=AsyncMock(return_value=([candidate], 0, 0)),

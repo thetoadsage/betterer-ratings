@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Dict, List, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Set, Tuple
 
 from betterer_ratings.core.clock import now_epoch
 
@@ -14,7 +14,7 @@ async def scan_imdb_archive_source(
     source_stats: Dict[str, Dict[str, int]],
     candidates: List[Any],
     seen: Set[Tuple[str, int]],
-    ensure_imdb_index_fn: Callable[[Any], int],
+    ensure_imdb_index_fn: Callable[[Any], Awaitable[int]],
     read_imdb_index_batch_fn: Callable[[Any], Tuple[List[Any], int, int, bool]],
     commit_imdb_cursor_fn: Callable[..., None],
     map_imdb_candidates_to_tmdb_fn: Callable[..., Any],
@@ -56,7 +56,9 @@ async def scan_imdb_archive_source(
     stat["last_page"] = 1
     publish_scan_progress_fn(source, current_page=1)
     try:
-        total_indexed = ensure_imdb_index_fn(source)
+        total_indexed = await ensure_imdb_index_fn(source)
+        if stop_event.is_set():
+            return True, pages_scanned, raw_seen_total
         total_batches = (
             max(1, math.ceil(total_indexed / title_batch_size))
             if total_indexed > 0

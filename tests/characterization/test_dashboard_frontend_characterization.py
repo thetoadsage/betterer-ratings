@@ -4,6 +4,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+from aiohttp.test_utils import make_mocked_request
+
 from betterer_ratings import api_server
 
 
@@ -205,3 +207,32 @@ def test_services_api_hides_expired_pause_reason() -> None:
     assert services["mdblist"]["is_paused"] is True
     assert services["mdblist"]["pause_reason"] == "Daily limit reached"
     assert services["mal"]["last_status"] is None
+
+
+def test_summary_cache_is_shared_while_queue_status_stays_live(local_db, monkeypatch):
+    now = 100.0
+    monkeypatch.setattr(api_server, "monotonic", lambda: now)
+    app = api_server.create_app(local_db)
+
+    async def get(path, handler):
+        request = make_mocked_request("GET", path, app=app, headers={"Origin": "https://example.com"})
+        response = await app.middlewares[0](request, handler)
+        assert "Access-Control-Allow-Origin" not in response.headers
+        return json.loads(response.text)
+
+    async def run():
+        nonlocal now
+        path = "/api/ratings/summary"
+        summary = api_server.handle_ratings_summary
+        assert (await get(path, summary))["by_label"] == []
+        await get("/api/stats", api_server.handle_stats)
+        local_db._upsert_rating(4, "movie", "TM", 80.0, 100)
+        assert (await get(path, summary))["by_label"] == []
+        stats = await get("/api/stats", api_server.handle_stats)
+        assert stats["queue"]["ratings_pending"] == 1
+        assert stats["summary"]["ratings_total"] == 0
+        now += api_server.SUMMARY_TTL_SECONDS
+        assert (await get(path, summary))["by_label"][0]["total"] == 1
+        assert (await get("/api/stats", api_server.handle_stats))["summary"]["ratings_total"] == 1
+
+    asyncio.run(run())

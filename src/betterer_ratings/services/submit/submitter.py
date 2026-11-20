@@ -45,6 +45,7 @@ class Submitter:
         self.in_flight_lease_seconds: int = 30
         self.max_retry_attempts: int = 1
         self.lease_recovery_interval: float = 10.0
+        self._active_claims: set[str] = set()
         self._verify_after_transient_statuses: set[int] = set()
         submit_setup.configure_submitter(
             submitter=self,
@@ -111,6 +112,7 @@ class Submitter:
             db=self.db,
             lease_recovery_interval=self.lease_recovery_interval,
             in_flight_lease_seconds=self.in_flight_lease_seconds,
+            active_claims=self._active_claims,
             logger=LOGGER,
         )
 
@@ -123,6 +125,7 @@ class Submitter:
             submit_mapping_group_fn=self._submit_mapping_group,
             submit_rating_fn=self._submit_rating,
             submit_episode_ratings_batch_fn=self._submit_episode_ratings_batch,
+            active_claims=self._active_claims,
             episode_batch_size=50,
             queue_order=queue_order_for_worker(worker_id, self.worker_count),
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Sequence
 
+from betterer_ratings.infra.db.queue_claims import claim_token_for
 from betterer_ratings.providers.pmdb_helpers import PMDB_TRANSIENT_STATUSES
 
 
@@ -43,6 +44,7 @@ async def submit_episode_ratings_batch(
             season,
             int(row["episode"]),
             str(row["label"]),
+            claim_token=claim_token_for(row),
         )
 
     def mark_retryable_delete(
@@ -84,6 +86,7 @@ async def submit_episode_ratings_batch(
                         "for episode rating delete+create."
                     ),
                 ),
+                claim_token=claim_token_for(row),
             )
             return
         retry_delay = retry_delay_seconds_fn(pseudo_result, attempts)
@@ -101,6 +104,7 @@ async def submit_episode_ratings_batch(
                 retryable=True,
                 message=message,
             ),
+            claim_token=claim_token_for(row),
         )
 
     if cached_rows:
@@ -218,6 +222,7 @@ async def submit_episode_ratings_batch(
                     retryable=False,
                     message=message,
                 ),
+                claim_token=claim_token_for(row),
             )
 
     if not rows_to_create:
@@ -267,6 +272,7 @@ async def submit_episode_ratings_batch(
                 str(row["label"]),
                 submitted_at,
                 pmdb_item_id=created_item_id,
+                claim_token=claim_token_for(row),
             )
         else:
             unresolved_rows.append(row)
@@ -292,6 +298,7 @@ async def submit_episode_ratings_batch(
             str(row["label"]),
             submitted_at,
             pmdb_item_id=found_item_id,
+            claim_token=claim_token_for(row),
         )
         unresolved_rows.remove(row)
 
@@ -358,6 +365,7 @@ async def submit_episode_ratings_batch(
                             "for episode batch submission."
                         ),
                     ),
+                    claim_token=claim_token_for(row),
                 )
             else:
                 retry_delay = retry_delay_seconds_fn(pseudo_result, attempts)
@@ -376,6 +384,7 @@ async def submit_episode_ratings_batch(
                         retryable=True,
                         message=(f"{message[:220]} episode={episode} score={score:.1f}"),
                     ),
+                    claim_token=claim_token_for(row),
                 )
             continue
 
@@ -392,6 +401,7 @@ async def submit_episode_ratings_batch(
                 retryable=False,
                 message=f"{message[:220]} episode={episode} score={score:.1f}",
             ),
+            claim_token=claim_token_for(row),
         )
     logger.warning(
         "[Submitter] Episode batch unresolved: %s %s season=%s unresolved=%s status=%s",

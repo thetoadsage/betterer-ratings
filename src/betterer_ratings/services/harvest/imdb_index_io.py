@@ -1,7 +1,23 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Set, Tuple
+from tempfile import NamedTemporaryFile
+from typing import IO, Any, Callable, Iterator, List, Optional, Set, Tuple
+
+
+@contextmanager
+def atomic_index_writer(path: Path) -> Iterator[IO[str]]:
+    temporary = NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False,
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary:
+            yield temporary
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def reset_cursor(

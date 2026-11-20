@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Optional, Set
 
 from betterer_ratings.core.clock import format_duration
+from betterer_ratings.infra.db.queue_claims import claim_token_for
 
 
 async def submit_rating(
@@ -44,7 +45,7 @@ async def submit_rating(
     if result.stale_cached_item_id and pmdb_item_id:
         # PMDB confirmed our cached id belongs to another account; stop
         # trusting it so future cycles don't try to delete it again.
-        db.clear_rating_pmdb_item_id(tmdb_id, media_type, label)
+        db.clear_rating_pmdb_item_id(tmdb_id, media_type, label, claim_token=claim_token_for(row))
         pmdb_item_id = None
 
     if result.success:
@@ -59,6 +60,7 @@ async def submit_rating(
             label,
             now_epoch_fn(),
             pmdb_item_id=submitted_item_id,
+            claim_token=claim_token_for(row),
         )
         if result.duplicate_or_exists:
             logger.info(
@@ -113,6 +115,7 @@ async def submit_rating(
                     label,
                     now_epoch_fn(),
                     pmdb_item_id=pmdb_item_id,
+                    claim_token=claim_token_for(row),
                 )
                 logger.info(
                     "[Submitter] Rating confirmed remote after transient failure: %s %s %s=%.1f",
@@ -138,6 +141,7 @@ async def submit_rating(
                         f"Exceeded max retry attempts ({max_retry_attempts}) for rating submission."
                     ),
                 ),
+                claim_token=claim_token_for(row),
             )
             logger.error(
                 "[Submitter] Rating failed permanently after max attempts (%s): %s %s %s=%.1f",
@@ -162,6 +166,7 @@ async def submit_rating(
             label,
             retry_at,
             error_payload,
+            claim_token=claim_token_for(row),
         )
         logger.warning(
             "[Submitter] Rating retry scheduled in %s: %s %s %s=%.1f",
@@ -182,6 +187,7 @@ async def submit_rating(
             endpoint_hint="/api/external/ratings",
             result=result,
         ),
+        claim_token=claim_token_for(row),
     )
     logger.error(
         "[Submitter] Rating failed permanently: %s %s %s=%.1f (%s)",

@@ -48,11 +48,14 @@ class LocalDatabaseQueueMixin:
         """Re-queue rows that were claimed before an unclean shutdown."""
         recover_in_flight_rows(self.conn)
 
-    def recover_stale_in_flight_rows(self, lease_seconds: int) -> Dict[str, int]:
+    def recover_stale_in_flight_rows(
+        self, lease_seconds: int, active_claims: set[str] | None = None,
+    ) -> Dict[str, int]:
         return recover_stale_in_flight_rows(
             self.conn,
             lease_seconds=lease_seconds,
             now_epoch_fn=now_epoch,
+            active_claims=active_claims,
         )
 
     def cleanup_retry_storm_rows(self, max_attempts: int) -> Dict[str, int]:
@@ -127,6 +130,8 @@ class LocalDatabaseQueueMixin:
         label: str,
         submitted_at: int,
         pmdb_item_id: Optional[str] = None,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_rating_submitted(
             self.conn,
@@ -136,6 +141,7 @@ class LocalDatabaseQueueMixin:
             submitted_at=submitted_at,
             pmdb_item_id=pmdb_item_id,
             local_day_key_fn=local_day_key,
+            claim_token=claim_token,
         )
 
     def mark_mapping_submitted(
@@ -145,6 +151,9 @@ class LocalDatabaseQueueMixin:
         id_type: str,
         submitted_at: int,
         pmdb_item_id: Optional[str] = None,
+        *,
+        claim_token: str | None = None,
+        submitted_value: str | None = None,
     ) -> None:
         mark_mapping_submitted(
             self.conn,
@@ -154,6 +163,8 @@ class LocalDatabaseQueueMixin:
             submitted_at=submitted_at,
             pmdb_item_id=pmdb_item_id,
             local_day_key_fn=local_day_key,
+            submitted_value=submitted_value,
+            claim_token=claim_token,
         )
 
     def mark_episode_rating_submitted(
@@ -165,6 +176,8 @@ class LocalDatabaseQueueMixin:
         label: str,
         submitted_at: int,
         pmdb_item_id: Optional[str] = None,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_episode_rating_submitted(
             self.conn,
@@ -176,6 +189,7 @@ class LocalDatabaseQueueMixin:
             submitted_at=submitted_at,
             pmdb_item_id=pmdb_item_id,
             local_day_key_fn=local_day_key,
+            claim_token=claim_token,
         )
 
     def mark_rating_retry(
@@ -185,6 +199,8 @@ class LocalDatabaseQueueMixin:
         label: str,
         retry_after: int,
         error_text: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_rating_retry(
             self.conn,
@@ -193,6 +209,7 @@ class LocalDatabaseQueueMixin:
             label=label,
             retry_after=retry_after,
             error_text=error_text,
+            claim_token=claim_token,
         )
 
     def clear_rating_pmdb_item_id(
@@ -200,12 +217,15 @@ class LocalDatabaseQueueMixin:
         tmdb_id: int,
         media_type: str,
         label: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         clear_rating_pmdb_item_id(
             self.conn,
             tmdb_id=tmdb_id,
             media_type=media_type,
             label=label,
+            claim_token=claim_token,
         )
 
     def mark_mapping_retry(
@@ -215,6 +235,8 @@ class LocalDatabaseQueueMixin:
         id_type: str,
         retry_after: int,
         error_text: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_mapping_retry(
             self.conn,
@@ -223,6 +245,7 @@ class LocalDatabaseQueueMixin:
             id_type=id_type,
             retry_after=retry_after,
             error_text=error_text,
+            claim_token=claim_token,
         )
 
     def clear_mapping_pmdb_item_id(
@@ -230,12 +253,15 @@ class LocalDatabaseQueueMixin:
         tmdb_id: int,
         media_type: str,
         id_type: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         clear_mapping_pmdb_item_id(
             self.conn,
             tmdb_id=tmdb_id,
             media_type=media_type,
             id_type=id_type,
+            claim_token=claim_token,
         )
 
     def clear_episode_rating_pmdb_item_id(
@@ -245,6 +271,8 @@ class LocalDatabaseQueueMixin:
         season: int,
         episode: int,
         label: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         clear_episode_rating_pmdb_item_id(
             self.conn,
@@ -253,6 +281,7 @@ class LocalDatabaseQueueMixin:
             season=season,
             episode=episode,
             label=label,
+            claim_token=claim_token,
         )
 
     def mark_episode_rating_retry(
@@ -264,6 +293,8 @@ class LocalDatabaseQueueMixin:
         label: str,
         retry_after: int,
         error_text: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_episode_rating_retry(
             self.conn,
@@ -274,6 +305,7 @@ class LocalDatabaseQueueMixin:
             label=label,
             retry_after=retry_after,
             error_text=error_text,
+            claim_token=claim_token,
         )
 
     def mark_rating_failed(
@@ -282,6 +314,8 @@ class LocalDatabaseQueueMixin:
         media_type: str,
         label: str,
         error_text: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_rating_failed(
             self.conn,
@@ -289,6 +323,7 @@ class LocalDatabaseQueueMixin:
             media_type=media_type,
             label=label,
             error_text=error_text,
+            claim_token=claim_token,
         )
 
     def mark_mapping_failed(
@@ -297,6 +332,8 @@ class LocalDatabaseQueueMixin:
         media_type: str,
         id_type: str,
         error_text: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_mapping_failed(
             self.conn,
@@ -304,6 +341,7 @@ class LocalDatabaseQueueMixin:
             media_type=media_type,
             id_type=id_type,
             error_text=error_text,
+            claim_token=claim_token,
         )
 
     def mark_episode_rating_failed(
@@ -314,6 +352,8 @@ class LocalDatabaseQueueMixin:
         episode: int,
         label: str,
         error_text: str,
+        *,
+        claim_token: str | None = None,
     ) -> None:
         mark_episode_rating_failed(
             self.conn,
@@ -323,6 +363,7 @@ class LocalDatabaseQueueMixin:
             episode=episode,
             label=label,
             error_text=error_text,
+            claim_token=claim_token,
         )
 
     def queue_counts(self) -> Dict[str, int]:

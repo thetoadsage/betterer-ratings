@@ -9,6 +9,7 @@ def test_compose_uses_stable_container_name_and_rotates_logs():
     )
 
     assert "container_name: betterer-ratings" in compose_text
+    assert '"${BETTERER_DASHBOARD_BIND:-127.0.0.1}:8087:8087"' in compose_text
     assert (
         "image: ${BETTERER_IMAGE:-ghcr.io/thetoadsage/betterer-ratings:latest}"
         in compose_text
