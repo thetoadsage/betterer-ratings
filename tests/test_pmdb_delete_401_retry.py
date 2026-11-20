@@ -120,16 +120,16 @@ class _FakeRatingDB:
         self.failed: list[tuple] = []
         self.cleared: list[tuple] = []
 
-    def mark_rating_submitted(self, tmdb_id, media_type, label, submitted_at, pmdb_item_id=None):
+    def mark_rating_submitted(self, tmdb_id, media_type, label, submitted_at, pmdb_item_id=None, **_claim):
         self.submitted.append((tmdb_id, media_type, label, submitted_at, pmdb_item_id))
 
-    def mark_rating_retry(self, tmdb_id, media_type, label, retry_after, error_text):
+    def mark_rating_retry(self, tmdb_id, media_type, label, retry_after, error_text, **_claim):
         self.retried.append((tmdb_id, media_type, label, retry_after, error_text))
 
-    def mark_rating_failed(self, tmdb_id, media_type, label, error_text):
+    def mark_rating_failed(self, tmdb_id, media_type, label, error_text, **_claim):
         self.failed.append((tmdb_id, media_type, label, error_text))
 
-    def clear_rating_pmdb_item_id(self, tmdb_id, media_type, label):
+    def clear_rating_pmdb_item_id(self, tmdb_id, media_type, label, **_claim):
         self.cleared.append((tmdb_id, media_type, label))
 
 

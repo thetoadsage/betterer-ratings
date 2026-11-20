@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from betterer_ratings.core.clock import now_epoch as core_now_epoch
 from betterer_ratings.core.parsing import parse_int as core_parse_int
@@ -20,7 +20,7 @@ async def collect_source_candidates(
     scan_sources: Sequence[Any],
     imdb_archive_source: Optional[Any],
     imdb_titles_enabled: bool,
-    ensure_imdb_index_fn: Callable[[Any], int],
+    ensure_imdb_index_fn: Callable[[Any], Awaitable[int]],
     read_imdb_index_batch_fn: Callable[[Any], Tuple[List[Any], int, int, bool]],
     commit_imdb_cursor_fn: Callable[..., None],
     map_imdb_candidates_to_tmdb_fn: Callable[..., Any],

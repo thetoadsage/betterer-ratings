@@ -37,15 +37,20 @@ def update_mal_hold(
 
 def defer_held_mapping(conn: sqlite3.Connection, row: Any) -> bool:
     """Final synchronous check for a hold added after a row was claimed."""
+    claim_token = dict(row).get("pmdb_claim_token")
+    key = (row["tmdb_id"], row["media_type"], row["id_type"])
     allowed = conn.execute(f"""
         SELECT 1 FROM mappings WHERE tmdb_id=? AND media_type=? AND id_type=?
           AND id_value=? AND {MAPPING_ELIGIBLE_SQL}
-    """, (row['tmdb_id'], row['media_type'], row['id_type'], row['id_value'])).fetchone()
+          AND (? IS NULL OR (pmdb_status='in_flight' AND pmdb_claim_token=?))
+    """, (*key, row["id_value"], claim_token, claim_token)).fetchone()
     if allowed:
         return False
     with conn:
         conn.execute("""
-            UPDATE mappings SET pmdb_status='pending', pmdb_claimed_at=NULL
+            UPDATE mappings SET pmdb_status='pending', pmdb_claimed_at=NULL,
+                pmdb_claim_token=NULL, pmdb_claim_changed=0
             WHERE tmdb_id=? AND media_type=? AND id_type=? AND pmdb_status='in_flight'
-        """, (row['tmdb_id'], row['media_type'], row['id_type']))
+              AND (? IS NULL OR pmdb_claim_token=?)
+        """, (*key, claim_token, claim_token))
     return True

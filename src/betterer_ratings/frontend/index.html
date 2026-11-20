@@ -57,7 +57,7 @@ a{color:inherit;text-decoration:none}
 .topnav-brand{display:flex;align-items:center;gap:10px}
 .brand-mark{
   width:18px;height:18px;border:2px solid var(--emerald);border-radius:50%;
-  position:relative;box-shadow:0 0 0 4px rgba(16,185,129,.08);
+  position:relative;
 }
 .brand-mark::after{
   content:'';position:absolute;left:7px;top:3px;width:2px;height:8px;
@@ -65,23 +65,22 @@ a{color:inherit;text-decoration:none}
 }
 .topnav-brand>span{font-weight:700;font-size:1rem;letter-spacing:-.02em}
 .activity-matrix{
-  --matrix-glow:rgba(84,209,138,.08);
   display:grid;grid-template-columns:repeat(5,3px);grid-auto-rows:3px;gap:2px;
   padding:4px;margin-left:2px;border:1px solid #272d36;border-radius:5px;
-  background:#090b0e;box-shadow:inset 0 0 8px rgba(0,0,0,.7),0 0 10px var(--matrix-glow);
+  background:#090b0e;box-shadow:inset 0 1px 3px rgba(0,0,0,.7);
 }
 .matrix-dot{
   width:3px;height:3px;border-radius:1px;background:var(--dot-color,#303641);
-  opacity:.18;box-shadow:none;transition:opacity .3s ease,background-color .3s ease,box-shadow .3s ease;
+  opacity:.18;transition:opacity .3s ease,background-color .3s ease;
 }
-.matrix-dot.steady{opacity:.68;box-shadow:0 0 3px var(--dot-color)}
+.matrix-dot.steady{opacity:.68}
 .matrix-dot.queued{opacity:.38}
 .matrix-dot.active{
-  opacity:1;box-shadow:0 0 5px var(--dot-color);
+  opacity:1;
   animation:matrix-pulse 1.65s ease-in-out infinite;animation-delay:var(--pulse-delay,0s);
 }
 .matrix-dot.alert{
-  --dot-color:var(--red)!important;opacity:1;box-shadow:0 0 6px var(--red);
+  --dot-color:var(--red)!important;opacity:1;
   animation:matrix-alert 1.1s ease-in-out infinite;animation-delay:var(--pulse-delay,0s);
 }
 @keyframes matrix-pulse{0%,100%{opacity:.42}45%{opacity:1}65%{opacity:.72}}
@@ -520,6 +519,7 @@ let matrixPreviousTotals = null;
 let logLevelFilter = 'ALL';
 let logsClearedAtEpoch = 0;
 let logsNewestVisibleTimestamp = 0;
+let logRequest = 0;
 
 function logsURL() {
   return logLevelFilter && logLevelFilter !== 'ALL'
@@ -547,40 +547,60 @@ async function fetchJSON(url) {
   catch(e){ return null; }
 }
 
-async function loadAll() {
-  const [stats,services,titlesSummary,ratingsSummary,mappingsSummary,episodesSummary,metricsHistory,titlesRecent,titlesDaily,logs] = await Promise.all([
+async function loadLive() {
+  const [stats,services,titlesRecent] = await Promise.all([
     fetchJSON('/api/stats'),
     fetchJSON('/api/services'),
-    fetchJSON('/api/titles/summary'),
-    fetchJSON('/api/ratings/summary'),
-    fetchJSON('/api/mappings/summary'),
-    fetchJSON('/api/episodes/summary'),
-    fetchJSON('/api/metrics/history'),
     fetchJSON('/api/titles/recent'),
-    fetchJSON('/api/titles/daily'),
-    fetchJSON(logsURL()),
   ]);
-  state = {stats,services,titlesSummary,ratingsSummary,mappingsSummary,episodesSummary,metricsHistory,titlesRecent,titlesDaily,logs};
-  render();
-  document.getElementById('nav-last-update').textContent = 'Updated '+new Date().toLocaleTimeString();
-}
-
-// ─── Render ───
-function render() {
+  Object.assign(state, {stats,services,titlesRecent});
   renderActivityMatrix();
   renderStats();
-  renderTrend();
-  renderTitlesBars();
-  renderMappingsTable();
-  renderRatingsTable();
   renderQueueHealth();
   renderQueueCards();
   renderProviderSummary();
   renderProviders();
   renderRecent();
+  if (stats && services) {
+    document.getElementById('nav-last-update').textContent = 'Updated '+new Date().toLocaleTimeString();
+  }
+}
+
+async function loadSummaries() {
+  const [titlesSummary,ratingsSummary,mappingsSummary,episodesSummary,metricsHistory,titlesDaily] = await Promise.all([
+    fetchJSON('/api/titles/summary'),
+    fetchJSON('/api/ratings/summary'),
+    fetchJSON('/api/mappings/summary'),
+    fetchJSON('/api/episodes/summary'),
+    fetchJSON('/api/metrics/history'),
+    fetchJSON('/api/titles/daily'),
+  ]);
+  Object.assign(state, {titlesSummary,ratingsSummary,mappingsSummary,episodesSummary,metricsHistory,titlesDaily});
+  renderStats();
+  renderTrend();
+  renderTitlesBars();
+  renderMappingsTable();
+  renderRatingsTable();
+  renderQueueCards();
+}
+
+async function loadLogs() {
+  const request = ++logRequest;
+  const logs = await fetchJSON(logsURL());
+  if (request !== logRequest) return;
+  state.logs = logs;
   renderLogs();
 }
 
+async function poll(load, interval) {
+  try {
+    await load();
+  } finally {
+    setTimeout(() => poll(load, interval), interval);
+  }
+}
+
+// ─── Render ───
 function renderActivityMatrix() {
   const matrix = document.getElementById('activity-matrix');
   if (!matrix) return;
@@ -650,7 +670,6 @@ function renderActivityMatrix() {
   const label = `Activity: ${inFlight} in flight, ${pending} queued, ${failedRows} failed; ${providerSummary}`;
   matrix.setAttribute('aria-label', label);
   matrix.title = `${label}. Blue: TMDB; amber: MDBList and episodes; violet: PMDB and mappings; green: ratings and health; red: paused or failed.`;
-  matrix.style.setProperty('--matrix-glow', hasProblem ? 'rgba(228,91,101,.16)' : inFlight > 0 ? 'rgba(84,209,138,.14)' : 'rgba(84,209,138,.06)');
   matrixPreviousTotals = totals;
 }
 
@@ -1039,7 +1058,7 @@ function renderLogs() {
 
 document.getElementById('log-level-filter')?.addEventListener('change', e => {
   logLevelFilter = e.target.value;
-  loadAll();
+  loadLogs();
 });
 document.getElementById('log-clear-btn')?.addEventListener('click', () => {
   logsClearedAtEpoch = logsNewestVisibleTimestamp;
@@ -1047,8 +1066,9 @@ document.getElementById('log-clear-btn')?.addEventListener('click', () => {
 });
 
 // ─── Init & Refresh ───
-loadAll();
-setInterval(loadAll, 5000);
+poll(loadLive, 5000);
+poll(loadSummaries, 30000);
+poll(loadLogs, 5000);
 </script>
 </body>
 </html>

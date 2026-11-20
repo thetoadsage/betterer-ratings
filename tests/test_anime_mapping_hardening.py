@@ -75,9 +75,10 @@ def test_migration_preserves_history_and_holds_old_unsent_mal(tmp_path):
     for i, status in enumerate(['pending', 'retry', 'in_flight', 'submitted', 'failed']):
         conn.execute("INSERT INTO mappings(tmdb_id,media_type,id_type,id_value,fetched_at,pmdb_status,pmdb_item_id) VALUES (?,'movie','mal','164',1,?,'keep')", (i, status))
     conn.commit()
-    before = [tuple(r) for r in conn.execute('SELECT * FROM mappings')]
+    columns = ', '.join(row['name'] for row in conn.execute('PRAGMA table_info(mappings)'))
+    before = [tuple(r) for r in conn.execute(f'SELECT {columns} FROM mappings')]
     apply_migrations(conn)
-    assert [tuple(r) for r in conn.execute('SELECT * FROM mappings')] == before
+    assert [tuple(r) for r in conn.execute(f'SELECT {columns} FROM mappings')] == before
     assert [r[0] for r in conn.execute('SELECT tmdb_id FROM anime_mapping_holds ORDER BY tmdb_id')] == [0, 1, 2]
     apply_migrations(conn)
     assert conn.execute('SELECT count(*) FROM anime_mapping_holds').fetchone()[0] == 3

@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from aiohttp import web
@@ -21,6 +24,12 @@ LOGGER = logging.getLogger("betterer-ratings.api")
 
 DASHBOARD_PORT = 8087
 FRONTEND_DIR = Path(__file__).parent / "frontend"
+SUMMARY_TTL_SECONDS = 30
+SUMMARY_PATHS = frozenset({
+    "/api/titles/summary", "/api/ratings/summary", "/api/mappings/summary",
+    "/api/episodes/summary", "/api/metrics/history", "/api/titles/daily",
+})
+SUBMISSION_SUMMARY = web.AppKey("submission_summary", dict)
 
 
 def _row_to_dict(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
@@ -37,7 +46,6 @@ def _json_response(data: Any) -> web.Response:
     return web.Response(
         text=json.dumps(data, default=str),
         content_type="application/json",
-        headers={"Access-Control-Allow-Origin": "*"},
     )
 
 
@@ -45,11 +53,16 @@ async def handle_stats(request: web.Request) -> web.Response:
     db = request.app["db"]
     ts = now_epoch()
     queue = db.queue_counts()
-    summary = db.submission_summary(ts)
+    cache = request.app[SUBMISSION_SUMMARY]
+    if cache["expires_at"] <= monotonic() or not (
+        cache["data"]["day_start_ts"] <= ts < cache["data"]["day_end_ts"]
+    ):
+        cache["data"] = db.submission_summary(ts)
+        cache["expires_at"] = monotonic() + SUMMARY_TTL_SECONDS
     return _json_response({
         "timestamp": ts,
         "queue": queue,
-        "summary": summary,
+        "summary": cache["data"],
     })
 
 
@@ -276,7 +289,24 @@ async def handle_submitted_titles_daily(request: web.Request) -> web.Response:
 
 
 def create_app(db: Any) -> web.Application:
-    app = web.Application()
+    responses: dict[str, tuple[float, bytes]] = {}
+
+    @web.middleware
+    async def cache_summaries(
+        request: web.Request, handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+    ) -> web.StreamResponse:
+        if request.method != "GET" or request.path not in SUMMARY_PATHS:
+            return await handler(request)
+        cached = responses.get(request.path)
+        if cached is not None and cached[0] > monotonic():
+            return web.Response(body=cached[1], content_type="application/json")
+        response = await handler(request)
+        if isinstance(response, web.Response) and response.status == 200 and isinstance(response.body, bytes):
+            responses[request.path] = (monotonic() + SUMMARY_TTL_SECONDS, response.body)
+        return response
+
+    app = web.Application(middlewares=[cache_summaries])
+    app[SUBMISSION_SUMMARY] = {"expires_at": 0.0, "data": None}
     app["db"] = db
     app["log_buffer"] = log_buffer.attach_once()
 
@@ -306,10 +336,12 @@ async def start_api_server(db: Any) -> web.AppRunner:
     app = create_app(db)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", DASHBOARD_PORT)
+    host = os.environ.get("BETTERER_DASHBOARD_HOST", "127.0.0.1")
+    site = web.TCPSite(runner, host, DASHBOARD_PORT)
     await site.start()
     LOGGER.info(
-        "Dashboard API server started on http://0.0.0.0:%s",
+        "Dashboard API server listening on %s port %s",
+        host,
         DASHBOARD_PORT,
     )
     return runner

@@ -189,16 +189,18 @@ class _FakeEpisodeBatchDB:
         self.retried: list[tuple] = []
         self.submitted: list[tuple] = []
 
-    def mark_episode_rating_failed(self, tmdb_id, media_type, season, episode, label, error_text):
+    def mark_episode_rating_failed(self, tmdb_id, media_type, season, episode, label, error_text, **_claim):
         self.failed.append((tmdb_id, media_type, season, episode, label, error_text))
 
     def mark_episode_rating_retry(
-        self, tmdb_id, media_type, season, episode, label, retry_at, error_text
+        self, tmdb_id, media_type, season, episode, label, retry_at, error_text,
+        **_claim,
     ):
         self.retried.append((tmdb_id, media_type, season, episode, label, retry_at, error_text))
 
     def mark_episode_rating_submitted(
-        self, tmdb_id, media_type, season, episode, label, submitted_at, pmdb_item_id=None
+        self, tmdb_id, media_type, season, episode, label, submitted_at, pmdb_item_id=None,
+        **_claim,
     ):
         self.submitted.append(
             (tmdb_id, media_type, season, episode, label, submitted_at, pmdb_item_id)

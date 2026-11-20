@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -29,7 +30,7 @@ def latest_imdb_archive_refresh_epoch(
     return int(scheduled.timestamp())
 
 
-def refresh_imdb_archives_if_due(
+async def refresh_imdb_archives_if_due(
     *,
     harvester: Any,
     source: Any,
@@ -54,7 +55,8 @@ def refresh_imdb_archives_if_due(
     extracted_from_local_gz = False
     if missing_files:
         for dataset_name in dataset_urls:
-            extracted = extract_local_imdb_gz_if_needed(
+            extracted = await asyncio.to_thread(
+                extract_local_imdb_gz_if_needed,
                 dataset_name=dataset_name,
                 archive_dir=archive_dir,
                 now_ts=now_ts,
@@ -138,7 +140,8 @@ def refresh_imdb_archives_if_due(
             safe_unlink(tsv_tmp_path)
 
             logger.info("[IMDbArchive] Downloading %s", url)
-            download_and_extract_imdb_dataset(
+            await asyncio.to_thread(
+                download_and_extract_imdb_dataset,
                 dataset_name=dataset_name,
                 url=url,
                 gz_tmp_path=gz_tmp_path,

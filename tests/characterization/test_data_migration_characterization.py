@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
+from betterer_ratings.infra.db.schema_repo import MIGRATIONS, apply_migrations
 from tests import support as m
 
 
@@ -91,3 +94,34 @@ def test_version_two_database_adds_mapping_item_value_without_rebuilding(tmp_pat
         ).fetchone()
     finally:
         migrated.close()
+
+
+@pytest.mark.parametrize("legacy_partial_upgrade", [False, True])
+def test_mapping_holds_migration_retries_after_ledger_failure(local_db, legacy_partial_upgrade):
+    conn = local_db.conn
+    with conn:
+        conn.execute("DELETE FROM schema_migrations WHERE version = 5")
+        conn.execute("DROP TABLE anime_mapping_holds")
+        conn.execute("""
+            INSERT INTO mappings (tmdb_id, media_type, id_type, id_value, fetched_at)
+            VALUES (1, 'movie', 'mal', '12', 1)
+        """)
+        if legacy_partial_upgrade:
+            migrate = next(fn for version, _, fn in MIGRATIONS if version == 5)
+            migrate(conn)
+            conn.execute("UPDATE anime_mapping_holds SET reason = 'preserved'")
+        conn.execute("""
+            CREATE TRIGGER fail_ledger BEFORE INSERT ON schema_migrations
+            WHEN NEW.version = 5 BEGIN SELECT RAISE(ABORT, 'simulated failure'); END
+        """)
+    with pytest.raises(sqlite3.IntegrityError, match="simulated failure"):
+        apply_migrations(conn)
+    assert conn.execute("SELECT 1 FROM schema_migrations WHERE version = 5").fetchone() is None
+    assert bool(conn.execute("""
+        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anime_mapping_holds'
+    """).fetchone()) == legacy_partial_upgrade
+    conn.execute("DROP TRIGGER fail_ledger")
+    apply_migrations(conn)
+    assert conn.execute("SELECT 1 FROM schema_migrations WHERE version = 5").fetchone()
+    row = conn.execute("SELECT reason FROM anime_mapping_holds").fetchone()
+    assert row["reason"] == ("preserved" if legacy_partial_upgrade else "validation_required")

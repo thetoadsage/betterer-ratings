@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, cast
+
+from betterer_ratings.services.harvest.imdb_archive_refresh_utils import safe_unlink
+from betterer_ratings.services.harvest.imdb_index_io import atomic_index_writer
 
 
 def build_imdb_episode_fingerprint(
@@ -58,19 +62,17 @@ def build_imdb_episode_fingerprint(
 
 def rebuild_imdb_episode_index(
     *,
-    harvester: Any,
+    index_path: Path,
     source: Any,
     episode_path: Path,
     ratings_path: Path,
     basics_path: Path,
-    fingerprint: str,
     parse_int_fn: Callable[[Any], Optional[int]],
     is_valid_imdb_title_id_fn: Callable[[str], bool],
     clamp_0_100_fn: Callable[[Any], Optional[float]],
     now_epoch_fn: Callable[[], int],
     logger: Any,
 ) -> int:
-    self = harvester
     started_at = now_epoch_fn()
     allowed_types = {str(x or "").strip().lower() for x in source.types}
     allowed_parent_ids: Set[str] = set()
@@ -132,12 +134,12 @@ def rebuild_imdb_episode_index(
                 continue
             ratings_lookup[imdb_id] = (int(votes), float(safe_score))
 
-    builder_path = self._imdb_episode_index_path.with_suffix(".build.sqlite3")
+    builder_path = index_path.with_suffix(".build.sqlite3")
     builder_wal_path = Path(f"{builder_path}-wal")
     builder_shm_path = Path(f"{builder_path}-shm")
-    self._safe_unlink(builder_path)
-    self._safe_unlink(builder_wal_path)
-    self._safe_unlink(builder_shm_path)
+    safe_unlink(builder_path)
+    safe_unlink(builder_wal_path)
+    safe_unlink(builder_shm_path)
 
     total = 0
     builder_conn = sqlite3.connect(builder_path)
@@ -254,7 +256,7 @@ def rebuild_imdb_episode_index(
                     insert_buffer,
                 )
 
-        with self._imdb_episode_index_path.open("w", encoding="utf-8") as out_handle:
+        with atomic_index_writer(index_path) as out_handle:
             cursor = builder_conn.execute(
                 """
                 SELECT
@@ -284,33 +286,30 @@ def rebuild_imdb_episode_index(
                 total += 1
     finally:
         builder_conn.close()
-        self._safe_unlink(builder_path)
-        self._safe_unlink(builder_wal_path)
-        self._safe_unlink(builder_shm_path)
+        safe_unlink(builder_path)
+        safe_unlink(builder_wal_path)
+        safe_unlink(builder_shm_path)
 
-    self.db.set_state(self._imdb_episode_fingerprint_key, fingerprint)
-    self.db.set_state(self._imdb_episode_total_key, total)
-    self._reset_imdb_episode_cursor(exhausted=(total == 0))
     elapsed = max(1, now_epoch_fn() - started_at)
     logger.info(
         "[IMDbArchive] Rebuilt episode index: rows=%s path=%s (%.1f rows/s)",
         total,
-        self._imdb_episode_index_path,
+        index_path,
         total / elapsed if elapsed > 0 else 0.0,
     )
     return total
 
 
-def ensure_imdb_episode_index(
+async def ensure_imdb_episode_index(
     *,
     harvester: Any,
     source: Any,
-    refresh_imdb_archives_if_due_fn: Callable[[Any], None],
+    refresh_imdb_archives_if_due_fn: Callable[[Any], Awaitable[None]],
     build_imdb_episode_fingerprint_fn: Callable[[Any], Tuple[str, Path, Path, Path]],
     rebuild_imdb_episode_index_fn: Callable[..., int],
 ) -> int:
     self = harvester
-    refresh_imdb_archives_if_due_fn(source)
+    await refresh_imdb_archives_if_due_fn(source)
     fingerprint, episode_path, ratings_path, basics_path = build_imdb_episode_fingerprint_fn(source)
     existing_fingerprint = self.db.get_state(self._imdb_episode_fingerprint_key)
     existing_total = cast(int, max(0, self.db.get_state_int(self._imdb_episode_total_key, 0)))
@@ -320,10 +319,15 @@ def ensure_imdb_episode_index(
         and existing_total >= 0
     ):
         return existing_total
-    return rebuild_imdb_episode_index_fn(
+    total = await asyncio.to_thread(
+        rebuild_imdb_episode_index_fn,
+        index_path=self._imdb_episode_index_path,
         source=source,
         episode_path=episode_path,
         ratings_path=ratings_path,
         basics_path=basics_path,
-        fingerprint=fingerprint,
     )
+    self._reset_imdb_episode_cursor(exhausted=(total == 0))
+    self.db.set_state(self._imdb_episode_total_key, total)
+    self.db.set_state(self._imdb_episode_fingerprint_key, fingerprint)
+    return total

@@ -20,284 +20,283 @@ def ensure_column(
 
 
 def _migration_001_initial_schema(conn: sqlite3.Connection) -> None:
-    with conn:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS titles (
+            tmdb_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            title TEXT,
+            imdb_id TEXT,
+            popularity REAL,
+            tmdb_vote_average REAL,
+            last_seen_at INTEGER NOT NULL,
+            last_harvested_at INTEGER,
+            last_mdblist_fetch_at INTEGER,
+            last_error TEXT,
+            PRIMARY KEY (tmdb_id, media_type)
+        )
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS titles (
-                tmdb_id INTEGER NOT NULL,
-                media_type TEXT NOT NULL,
-                title TEXT,
-                imdb_id TEXT,
-                popularity REAL,
-                tmdb_vote_average REAL,
-                last_seen_at INTEGER NOT NULL,
-                last_harvested_at INTEGER,
-                last_mdblist_fetch_at INTEGER,
-                last_error TEXT,
-                PRIMARY KEY (tmdb_id, media_type)
-            )
-            """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ratings (
+            tmdb_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            label TEXT NOT NULL,
+            score REAL NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            pmdb_item_id TEXT,
+            pmdb_status TEXT NOT NULL DEFAULT 'pending',
+            pmdb_claimed_at INTEGER,
+            pmdb_submitted_at INTEGER,
+            pmdb_attempts INTEGER NOT NULL DEFAULT 0,
+            pmdb_last_error TEXT,
+            pmdb_retry_after INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (tmdb_id, media_type, label)
         )
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS ratings (
-                tmdb_id INTEGER NOT NULL,
-                media_type TEXT NOT NULL,
-                label TEXT NOT NULL,
-                score REAL NOT NULL,
-                fetched_at INTEGER NOT NULL,
-                pmdb_item_id TEXT,
-                pmdb_status TEXT NOT NULL DEFAULT 'pending',
-                pmdb_claimed_at INTEGER,
-                pmdb_submitted_at INTEGER,
-                pmdb_attempts INTEGER NOT NULL DEFAULT 0,
-                pmdb_last_error TEXT,
-                pmdb_retry_after INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (tmdb_id, media_type, label)
-            )
-            """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS episode_ratings (
+            tmdb_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            season INTEGER NOT NULL,
+            episode INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            score REAL NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            imdb_parent_id TEXT,
+            imdb_episode_id TEXT,
+            votes INTEGER,
+            pmdb_item_id TEXT,
+            pmdb_status TEXT NOT NULL DEFAULT 'pending',
+            pmdb_claimed_at INTEGER,
+            pmdb_submitted_at INTEGER,
+            pmdb_attempts INTEGER NOT NULL DEFAULT 0,
+            pmdb_last_error TEXT,
+            pmdb_retry_after INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (tmdb_id, media_type, season, episode, label)
         )
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS episode_ratings (
-                tmdb_id INTEGER NOT NULL,
-                media_type TEXT NOT NULL,
-                season INTEGER NOT NULL,
-                episode INTEGER NOT NULL,
-                label TEXT NOT NULL,
-                score REAL NOT NULL,
-                fetched_at INTEGER NOT NULL,
-                imdb_parent_id TEXT,
-                imdb_episode_id TEXT,
-                votes INTEGER,
-                pmdb_item_id TEXT,
-                pmdb_status TEXT NOT NULL DEFAULT 'pending',
-                pmdb_claimed_at INTEGER,
-                pmdb_submitted_at INTEGER,
-                pmdb_attempts INTEGER NOT NULL DEFAULT 0,
-                pmdb_last_error TEXT,
-                pmdb_retry_after INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (tmdb_id, media_type, season, episode, label)
-            )
-            """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mappings (
+            tmdb_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            id_type TEXT NOT NULL,
+            id_value TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            pmdb_item_id TEXT,
+            pmdb_item_value TEXT,
+            pmdb_status TEXT NOT NULL DEFAULT 'pending',
+            pmdb_claimed_at INTEGER,
+            pmdb_submitted_at INTEGER,
+            pmdb_attempts INTEGER NOT NULL DEFAULT 0,
+            pmdb_last_error TEXT,
+            pmdb_retry_after INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (tmdb_id, media_type, id_type)
         )
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS mappings (
-                tmdb_id INTEGER NOT NULL,
-                media_type TEXT NOT NULL,
-                id_type TEXT NOT NULL,
-                id_value TEXT NOT NULL,
-                fetched_at INTEGER NOT NULL,
-                pmdb_item_id TEXT,
-                pmdb_item_value TEXT,
-                pmdb_status TEXT NOT NULL DEFAULT 'pending',
-                pmdb_claimed_at INTEGER,
-                pmdb_submitted_at INTEGER,
-                pmdb_attempts INTEGER NOT NULL DEFAULT 0,
-                pmdb_last_error TEXT,
-                pmdb_retry_after INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (tmdb_id, media_type, id_type)
-            )
-            """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS service_state (
+            service TEXT PRIMARY KEY,
+            paused_until INTEGER DEFAULT 0,
+            pause_reason TEXT,
+            rate_limit INTEGER,
+            rate_remaining INTEGER,
+            rate_reset INTEGER,
+            last_status INTEGER,
+            updated_at INTEGER
         )
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS service_state (
-                service TEXT PRIMARY KEY,
-                paused_until INTEGER DEFAULT 0,
-                pause_reason TEXT,
-                rate_limit INTEGER,
-                rate_remaining INTEGER,
-                rate_reset INTEGER,
-                last_status INTEGER,
-                updated_at INTEGER
-            )
-            """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS submitted_titles (
+            tmdb_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            first_submitted_at INTEGER NOT NULL,
+            last_submitted_at INTEGER NOT NULL,
+            PRIMARY KEY (tmdb_id, media_type)
         )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS submitted_title_days (
+            day_key TEXT NOT NULL,
+            tmdb_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            PRIMARY KEY (day_key, tmdb_id, media_type)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_submitted_title_days_day
+        ON submitted_title_days (day_key)
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS submitted_titles (
-                tmdb_id INTEGER NOT NULL,
-                media_type TEXT NOT NULL,
-                first_submitted_at INTEGER NOT NULL,
-                last_submitted_at INTEGER NOT NULL,
-                PRIMARY KEY (tmdb_id, media_type)
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS submitted_title_days (
-                day_key TEXT NOT NULL,
-                tmdb_id INTEGER NOT NULL,
-                media_type TEXT NOT NULL,
-                PRIMARY KEY (day_key, tmdb_id, media_type)
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_submitted_title_days_day
-            ON submitted_title_days (day_key)
-            """
-        )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_ratings_pending
+        ON ratings (pmdb_status, pmdb_retry_after)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_episode_ratings_pending
+        ON episode_ratings (pmdb_status, pmdb_retry_after)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_episode_ratings_parent_lookup
+        ON episode_ratings (imdb_parent_id, season, episode)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_mappings_pending
+        ON mappings (pmdb_status, pmdb_retry_after)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_mappings_imdb_lookup
+        ON mappings (id_type, id_value, media_type)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_titles_imdb_lookup
+        ON titles (imdb_id, media_type)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_titles_harvest_due
+        ON titles (last_harvested_at, media_type, tmdb_id)
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_ratings_pending
-            ON ratings (pmdb_status, pmdb_retry_after)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_episode_ratings_pending
-            ON episode_ratings (pmdb_status, pmdb_retry_after)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_episode_ratings_parent_lookup
-            ON episode_ratings (imdb_parent_id, season, episode)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_mappings_pending
-            ON mappings (pmdb_status, pmdb_retry_after)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_mappings_imdb_lookup
-            ON mappings (id_type, id_value, media_type)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_titles_imdb_lookup
-            ON titles (imdb_id, media_type)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_titles_harvest_due
-            ON titles (last_harvested_at, media_type, tmdb_id)
-            """
-        )
-
-        ensure_column(conn, table_name="ratings", column_name="pmdb_item_id", column_type="TEXT")
-        ensure_column(conn, table_name="mappings", column_name="pmdb_item_id", column_type="TEXT")
-        ensure_column(
-            conn, table_name="ratings", column_name="pmdb_claimed_at", column_type="INTEGER"
-        )
-        ensure_column(
-            conn, table_name="mappings", column_name="pmdb_claimed_at", column_type="INTEGER"
-        )
-        ensure_column(
-            conn, table_name="episode_ratings", column_name="pmdb_item_id", column_type="TEXT"
-        )
-        ensure_column(
-            conn, table_name="episode_ratings", column_name="pmdb_claimed_at", column_type="INTEGER"
-        )
+    ensure_column(conn, table_name="ratings", column_name="pmdb_item_id", column_type="TEXT")
+    ensure_column(conn, table_name="mappings", column_name="pmdb_item_id", column_type="TEXT")
+    ensure_column(
+        conn, table_name="ratings", column_name="pmdb_claimed_at", column_type="INTEGER"
+    )
+    ensure_column(
+        conn, table_name="mappings", column_name="pmdb_claimed_at", column_type="INTEGER"
+    )
+    ensure_column(
+        conn, table_name="episode_ratings", column_name="pmdb_item_id", column_type="TEXT"
+    )
+    ensure_column(
+        conn, table_name="episode_ratings", column_name="pmdb_claimed_at", column_type="INTEGER"
+    )
 
 
 def _migration_002_queue_claim_indexes(conn: sqlite3.Connection) -> None:
-    with conn:
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_ratings_claim_order
-            ON ratings (pmdb_status, fetched_at, pmdb_retry_after)
-            """
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_ratings_claim_order
+        ON ratings (pmdb_status, fetched_at, pmdb_retry_after)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_mappings_claim_order
+        ON mappings (pmdb_status, fetched_at, pmdb_retry_after)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_episode_ratings_claim_order
+        ON episode_ratings (pmdb_status, fetched_at, pmdb_retry_after)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_episode_ratings_claim_batch
+        ON episode_ratings (
+            pmdb_status,
+            tmdb_id,
+            media_type,
+            season,
+            pmdb_retry_after,
+            episode,
+            fetched_at
         )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_mappings_claim_order
-            ON mappings (pmdb_status, fetched_at, pmdb_retry_after)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_episode_ratings_claim_order
-            ON episode_ratings (pmdb_status, fetched_at, pmdb_retry_after)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_episode_ratings_claim_batch
-            ON episode_ratings (
-                pmdb_status,
-                tmdb_id,
-                media_type,
-                season,
-                pmdb_retry_after,
-                episode,
-                fetched_at
-            )
-            """
-        )
+        """
+    )
 
 
 def _migration_003_mapping_item_value(conn: sqlite3.Connection) -> None:
-    with conn:
-        ensure_column(
-            conn,
-            table_name="mappings",
-            column_name="pmdb_item_value",
-            column_type="TEXT",
-        )
+    ensure_column(
+        conn,
+        table_name="mappings",
+        column_name="pmdb_item_value",
+        column_type="TEXT",
+    )
 
 
 def _migration_005_anime_mapping_holds(conn: sqlite3.Connection) -> None:
-    with conn:
-        conn.execute("""
-            CREATE TABLE anime_mapping_holds (
-                tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
-                id_type TEXT NOT NULL, reason TEXT NOT NULL, updated_at INTEGER NOT NULL,
-                PRIMARY KEY (tmdb_id, media_type, id_type)
-            )
-        """)
-        # Preserve every queue row and all submitted history. Legacy unsent MAL
-        # work needs current validation before it may resume.
-        conn.execute("""
-            INSERT INTO anime_mapping_holds
-            SELECT tmdb_id, media_type, id_type, 'validation_required', ? FROM mappings
-            WHERE id_type='mal' AND pmdb_status IN ('pending', 'retry', 'in_flight')
-        """, (int(time.time()),))
-
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS anime_mapping_holds (
+            tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+            id_type TEXT NOT NULL, reason TEXT NOT NULL, updated_at INTEGER NOT NULL,
+            PRIMARY KEY (tmdb_id, media_type, id_type)
+        )
+    """)
+    # Preserve every queue row and all submitted history. Legacy unsent MAL
+    # work needs current validation before it may resume.
+    conn.execute("""
+        INSERT INTO anime_mapping_holds
+        SELECT tmdb_id, media_type, id_type, 'validation_required', ? FROM mappings
+        WHERE id_type='mal' AND pmdb_status IN ('pending', 'retry', 'in_flight')
+        ON CONFLICT(tmdb_id, media_type, id_type) DO NOTHING
+    """, (int(time.time()),))
 
 
 def _migration_006_provider_enrichment_state(conn: sqlite3.Connection) -> None:
     # Version 3 was used differently by an existing fork. Add missing cache
     # fields without rewriting its ledger or replaying data validation holds.
-    with conn:
-        conn.execute("BEGIN IMMEDIATE")
-        ensure_column(conn, table_name="mappings", column_name="pmdb_item_value", column_type="TEXT")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS enrichment_state (
-                tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
-                provider TEXT NOT NULL, payload TEXT, fetched_at INTEGER,
-                next_due INTEGER NOT NULL, PRIMARY KEY (tmdb_id, media_type, provider)
-            )
-        """)
+    ensure_column(conn, table_name="mappings", column_name="pmdb_item_value", column_type="TEXT")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS enrichment_state (
+            tmdb_id INTEGER NOT NULL, media_type TEXT NOT NULL,
+            provider TEXT NOT NULL, payload TEXT, fetched_at INTEGER,
+            next_due INTEGER NOT NULL, PRIMARY KEY (tmdb_id, media_type, provider)
+        )
+    """)
 
+
+def _migration_009_submission_claims(conn: sqlite3.Connection) -> None:
+    for table in ("ratings", "mappings", "episode_ratings"):
+        ensure_column(conn, table_name=table, column_name="pmdb_claim_token", column_type="TEXT")
+        ensure_column(
+            conn, table_name=table, column_name="pmdb_claim_changed",
+            column_type="INTEGER NOT NULL DEFAULT 0",
+        )
 
 
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
@@ -306,6 +305,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = 
     (3, "mapping_item_value", _migration_003_mapping_item_value),
     (5, "anime_mapping_holds", _migration_005_anime_mapping_holds),
     (6, "provider_enrichment_state", _migration_006_provider_enrichment_state),
+    (9, "submission_claims", _migration_009_submission_claims),
 )
 
 
@@ -338,12 +338,19 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
             last_applied = max(last_applied, version)
             continue
 
-        migration_fn(conn)
+        if version == 1:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
         with conn:
-            conn.execute(
-                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                (version, name, int(time.time())),
-            )
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+            ).fetchone() is None:
+                migration_fn(conn)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                    (version, name, int(time.time())),
+                )
         last_applied = max(last_applied, version)
 
     return last_applied

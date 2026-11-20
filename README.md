@@ -24,6 +24,11 @@ The dashboard is available at <http://localhost:8087>. Compose pulls the public
 `ghcr.io/itsrenoria/betterer-ratings:latest` image for `linux/amd64` or
 `linux/arm64`.
 
+Compose binds the dashboard to the Docker host's loopback interface. For an
+authenticated reverse proxy on the same Docker network, point it at
+`betterer-ratings:8087`. To publish the unauthenticated dashboard on a different
+host interface, set `BETTERER_DASHBOARD_BIND` to that interface's IP address.
+
 After the first successful image publication, the repository owner must confirm
 that the GHCR package visibility is **Public** in GitHub Package Settings before
 anonymous Compose pulls will work. This is a one-time setup step.
@@ -122,6 +127,9 @@ Run locally with `betterer-ratings --config config.toml`, or build a local image
 ```bash
 docker build -t betterer-ratings:local .
 ```
+
+The standalone worker listens on loopback by default. Set
+`BETTERER_DASHBOARD_HOST` to change the application's listening address.
 
 Logs are written as structured JSON to stdout. The supplied Compose service
 rotates Docker logs.

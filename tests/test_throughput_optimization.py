@@ -82,11 +82,12 @@ def test_mapping_group_preflight_resolves_existing_and_posts_only_missing():
             self.cleared = []
 
         def mark_mapping_submitted(
-            self, tmdb_id, media_type, id_type, submitted_at, pmdb_item_id=None
+            self, tmdb_id, media_type, id_type, submitted_at, pmdb_item_id=None,
+            **_claim,
         ):
             self.submitted.append((tmdb_id, media_type, id_type, submitted_at, pmdb_item_id))
 
-        def clear_mapping_pmdb_item_id(self, tmdb_id, media_type, id_type):
+        def clear_mapping_pmdb_item_id(self, tmdb_id, media_type, id_type, **_claim):
             self.cleared.append((tmdb_id, media_type, id_type))
 
     posted = []
@@ -172,7 +173,8 @@ def test_mapping_group_validates_cached_id_before_resolving_by_value():
             self.submitted = []
 
         def mark_mapping_submitted(
-            self, tmdb_id, media_type, id_type, submitted_at, pmdb_item_id=None
+            self, tmdb_id, media_type, id_type, submitted_at, pmdb_item_id=None,
+            **_claim,
         ):
             self.submitted.append((tmdb_id, media_type, id_type, submitted_at, pmdb_item_id))
 
@@ -249,7 +251,7 @@ def test_mapping_group_never_deletes_an_unverified_cached_id():
         def __init__(self):
             self.cleared = []
 
-        def clear_mapping_pmdb_item_id(self, tmdb_id, media_type, id_type):
+        def clear_mapping_pmdb_item_id(self, tmdb_id, media_type, id_type, **_claim):
             self.cleared.append((tmdb_id, media_type, id_type))
 
     row = {

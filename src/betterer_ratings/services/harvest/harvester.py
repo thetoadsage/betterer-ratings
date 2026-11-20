@@ -252,8 +252,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
             safe_unlink_fn=self._safe_unlink,
         )
 
-    def _refresh_imdb_archives_if_due(self, source: IMDbArchiveSource) -> None:
-        refresh_imdb_archives_if_due(
+    async def _refresh_imdb_archives_if_due(self, source: IMDbArchiveSource) -> None:
+        await refresh_imdb_archives_if_due(
             harvester=self,
             source=source,
             logger=LOGGER,
@@ -270,14 +270,13 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         source: IMDbArchiveSource,
         ratings_path: Path,
         basics_path: Path,
-        fingerprint: str,
+        index_path: Path,
     ) -> int:
         return rebuild_imdb_index(
-            harvester=self,
+            index_path=index_path,
             source=source,
             ratings_path=ratings_path,
             basics_path=basics_path,
-            fingerprint=fingerprint,
             parse_int_fn=parse_int,
             is_valid_imdb_title_id_fn=is_valid_imdb_title_id,
             imdb_title_type_to_media_type_fn=imdb_title_type_to_media_type,
@@ -285,8 +284,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
             logger=LOGGER,
         )
 
-    def _ensure_imdb_index(self, source: IMDbArchiveSource) -> int:
-        return ensure_imdb_index(
+    async def _ensure_imdb_index(self, source: IMDbArchiveSource) -> int:
+        return await ensure_imdb_index(
             harvester=self,
             source=source,
             refresh_imdb_archives_if_due_fn=self._refresh_imdb_archives_if_due,
@@ -309,15 +308,14 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
         episode_path: Path,
         ratings_path: Path,
         basics_path: Path,
-        fingerprint: str,
+        index_path: Path,
     ) -> int:
         return rebuild_imdb_episode_index(
-            harvester=self,
+            index_path=index_path,
             source=source,
             episode_path=episode_path,
             ratings_path=ratings_path,
             basics_path=basics_path,
-            fingerprint=fingerprint,
             parse_int_fn=parse_int,
             is_valid_imdb_title_id_fn=is_valid_imdb_title_id,
             clamp_0_100_fn=clamp_0_100,
@@ -325,8 +323,8 @@ class Harvester(HarvesterCycleMixin, HarvesterIMDbMapMixin):
             logger=LOGGER,
         )
 
-    def _ensure_imdb_episode_index(self, source: IMDbArchiveSource) -> int:
-        return ensure_imdb_episode_index(
+    async def _ensure_imdb_episode_index(self, source: IMDbArchiveSource) -> int:
+        return await ensure_imdb_episode_index(
             harvester=self,
             source=source,
             refresh_imdb_archives_if_due_fn=self._refresh_imdb_archives_if_due,

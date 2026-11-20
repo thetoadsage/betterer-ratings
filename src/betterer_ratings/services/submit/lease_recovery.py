@@ -12,6 +12,7 @@ async def lease_recovery_loop(
     db: Any,
     lease_recovery_interval: float,
     in_flight_lease_seconds: int,
+    active_claims: set[str],
     logger: Any,
 ) -> None:
     while not stop_event.is_set():
@@ -24,7 +25,7 @@ async def lease_recovery_loop(
         except asyncio.TimeoutError:
             pass
 
-        recovered = db.recover_stale_in_flight_rows(in_flight_lease_seconds)
+        recovered = db.recover_stale_in_flight_rows(in_flight_lease_seconds, active_claims)
         if (
             recovered["ratings"] > 0
             or recovered["episode_ratings"] > 0
